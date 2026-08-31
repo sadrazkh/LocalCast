@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+out/
+release/
+coverage/
+*.tsbuildinfo
+
+# Local runtime state — never commit
+.localcast/
+*.db
+*.db-wal
+*.db-shm
+config.json
+
+# Go build output
+native/netedge/netedge
+native/netedge/netedge.exe
+native/netedge/*.syso
+
+# Vendored third-party binaries fetched at build time
+vendor/bin/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test fixtures that are generated, not stored (multi-GB)
+**/__fixtures__/generated/
