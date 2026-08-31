@@ -1,0 +1,91 @@
+# Caddy in front of Headscale
+# -----------------------------------------------------------------------------
+# Caddy obtains and renews the Let's Encrypt certificate for the control-plane
+# domain automatically, over the HTTP-01 challenge on port 80. There is nothing
+# to run by hand and nothing to renew.
+#
+# {$VAR} is substituted by Caddy when it PARSES this file, using the container's
+# environment (docker-compose.yml feeds it from .env). That is why it works in
+# the site address on line 24 — the runtime form {env.VAR} would not.
+# -----------------------------------------------------------------------------
+
+{
+	# Where Let's Encrypt sends expiry warnings if renewal ever stops working.
+	# A real mailbox you read. Nothing else is sent here.
+	email {$ACME_EMAIL}
+
+	# Uncomment while testing to use the Let's Encrypt STAGING service. Staging
+	# issues certificates your browser will REJECT, but it has far looser rate
+	# limits — the production service will lock you out for a week after five
+	# failed attempts on the same domain. Comment it back out and run
+	# `docker compose restart caddy` for the real thing.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$HEADSCALE_DOMAIN} {
+	# `headscale` is the compose service name; Docker's embedded DNS resolves it
+	# on the private network. Port 8080 is the container's listen_addr, and it is
+	# never published to the internet — only Caddy is.
+	reverse_proxy headscale:8080 {
+		# Headscale honours these to log the real client address. Without them
+		# every node appears to come from Caddy's container IP.
+		# `trusted_proxies` in config.yaml must list the compose subnet or these
+		# headers are ignored (which is the safe default, not a bug).
+		header_up True-Client-IP {remote_host}
+		header_up X-Real-IP {remote_host}
+
+		# No websocket directive is needed. The Tailscale control protocol
+		# upgrades an HTTP POST to a connection with `Upgrade:
+		# tailscale-control-protocol`, and Caddy proxies arbitrary protocol
+		# upgrades transparently. If you swap Caddy for nginx you DO have to
+		# configure this by hand, and forgetting it is the classic "node hangs
+		# at 'Success.' and never appears in `headscale nodes list`" failure.
+	}
+
+	# Access log to stdout, so it lands in `docker compose logs caddy` and gets
+	# rotated by Docker rather than filling the VPS disk.
+	log {
+		output stdout
+		format console
+	}
+}
+
+# -----------------------------------------------------------------------------
+# OPTIONAL — the `external-proxy` certificate strategy for LocalCast itself.
+#
+# This is a SECOND, different certificate: the one your phone sees when it talks
+# to LocalCast. Headscale cannot issue it (see README.md section 5), so either
+# this proxy holds it or LocalCast holds it via DNS-01.
+#
+# Before uncommenting:
+#   1. Install Tailscale ON THIS VPS (from your distribution's package repo —
+#      https://tailscale.com/download/linux) and join it to this Headscale:
+#        sudo tailscale up --login-server https://{$HEADSCALE_DOMAIN} --authkey <key>
+#   2. Point an A record for localcast.example.com at this VPS's public IP.
+#   3. Replace <LOCALCAST_TAILNET_IP> with the 100.x address from
+#        headscale nodes list
+#      (or the MagicDNS name, if this VPS accepts Headscale's DNS).
+#   4. In LocalCast: certStrategy = external-proxy,
+#      certDomain = localcast.example.com
+#
+# UNDERSTAND THE COST: every byte your phone streams then travels
+#   phone -> this VPS -> WireGuard -> home PC -> back again.
+# Seeking around a 4K file will be as fast as your VPS's uplink and no faster,
+# and most cheap VPS plans meter that traffic. The `dns01` strategy keeps the
+# media path peer-to-peer. This is the single biggest trade-off in the whole
+# setup and it is why README.md section 5 asks you to choose deliberately.
+# -----------------------------------------------------------------------------
+#
+# localcast.example.com {
+# 	reverse_proxy http://<LOCALCAST_TAILNET_IP>:80 {
+# 		# LocalCast serves plain HTTP in external-proxy mode and trusts this
+# 		# proxy. Keep the Host header so it can match its own vhost.
+# 		header_up Host {host}
+# 		header_up X-Forwarded-Proto https
+#
+# 		# Range requests and SSE must not be buffered or the video player will
+# 		# stall on every scrub. Caddy streams by default; do not add a
+# 		# response buffer here.
+# 		flush_interval -1
+# 	}
+# }

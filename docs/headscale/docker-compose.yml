@@ -1,0 +1,131 @@
+# Headscale + Caddy for LocalCast
+# -----------------------------------------------------------------------------
+# Run this on a small public VPS. `setup.sh` in this directory creates the
+# directories, writes .env and config/config.yaml, and brings the stack up — but
+# every line here is commented so you can do it by hand and know what you did.
+#
+# There is deliberately no `version:` key. Compose v2 ignores it and warns.
+# -----------------------------------------------------------------------------
+
+services:
+  headscale:
+    # PINNED, not `latest`. Headscale has had breaking CLI and API changes
+    # between minor versions (`preauthkeys --user` went from a username to a
+    # numeric ID in 0.26, and the expire/delete subcommands changed again in
+    # 0.28). A stack that silently upgrades itself is a stack that breaks while
+    # you are away from it.
+    #
+    # v0.29.3 (released 2026-07-29) is the current stable release.
+    # Minimum supported Tailscale CLIENT version for it: v1.80.0.
+    # Upstream also publishes ghcr.io/juanfont/headscale:v0.29.3.
+    image: docker.io/headscale/headscale:v0.29.3
+    #
+    # Hardest possible pin — the multi-arch manifest digest for v0.29.3, as
+    # published on Docker Hub on 2026-07-29. Use this INSTEAD of the tag above
+    # if you want the image to be immutable even if the tag is ever moved.
+    # Re-check it yourself before trusting it:
+    #   docker buildx imagetools inspect docker.io/headscale/headscale:v0.29.3
+    # image: docker.io/headscale/headscale@sha256:0e7f1c6e4ce6c2a2a001103ecd3fa645a045adf30ac8a5234fe037b43000cd72
+
+    container_name: headscale
+
+    # The image's entrypoint is the `headscale` binary; `serve` is the
+    # subcommand that runs the server. Without it the container prints help and
+    # exits 0, which looks like a successful start.
+    command: serve
+
+    restart: unless-stopped
+
+    # The filesystem is read-only apart from the two writable paths below. This
+    # is upstream's own recommendation and it costs nothing.
+    read_only: true
+
+    # The CLI talks to the daemon over a unix socket at this path. It must be
+    # writable, but it must NOT survive a restart — a stale socket file confuses
+    # the next start. tmpfs gives both.
+    tmpfs:
+      - /var/run/headscale
+
+    volumes:
+      # Read-only: Headscale never writes its own config.
+      - ./config:/etc/headscale:ro
+      # Writable state. THIS IS THE ENTIRE SERVER:
+      #   db.sqlite          — users, nodes, pre-auth keys, routes
+      #   noise_private.key  — lose it and every node must re-register
+      # Back up this directory. It is small.
+      - ./lib:/var/lib/headscale
+
+    ports:
+      # Loopback ONLY. This is for you to curl from an SSH session on the VPS;
+      # it is not reachable from the internet. Public traffic arrives at Caddy.
+      # Removing this line costs you nothing except easy local debugging.
+      - "127.0.0.1:8080:8080"
+
+    healthcheck:
+      # `headscale health` exits 0 when the daemon answers over the unix socket.
+      # Caddy waits for this before it starts, so the first ACME request does
+      # not hit a backend that is still opening its database.
+      test: ["CMD", "headscale", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # SQLite migrations on an existing database can take a while on a small
+      # VPS; do not let the healthcheck kill the container during them.
+      start_period: 60s
+
+    networks:
+      - headscale
+
+  caddy:
+    # Pinned for the same reason. 2.11.4 is the current stable Caddy release.
+    # The -alpine variant is the small one; the certificates it issues are
+    # identical.
+    image: caddy:2.11.4-alpine
+    container_name: caddy
+    restart: unless-stopped
+
+    # Do not start Caddy until Headscale answers its healthcheck. Otherwise the
+    # very first request Let's Encrypt makes can be proxied to a dead backend.
+    depends_on:
+      headscale:
+        condition: service_healthy
+
+    ports:
+      # 80 is REQUIRED and cannot be moved: the HTTP-01 ACME challenge is served
+      # here, and Caddy redirects plain HTTP to HTTPS. Closing 80 after the
+      # first certificate is issued will break renewal 60 days later, quietly.
+      - "80:80"
+      # 443/tcp is the control plane itself.
+      - "443:443"
+      # 443/udp is HTTP/3. Optional. Harmless to leave open, and Caddy enables
+      # HTTP/3 by default, so omitting it makes some clients fall back after a
+      # short delay.
+      - "443:443/udp"
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates, private keys and the ACME account key live here. Back this
+      # up too, or at least understand that losing it means Caddy re-issues
+      # everything on next start — which is fine unless you are near a Let's
+      # Encrypt rate limit.
+      - ./caddy/data:/data
+      # Caddy's own autosave config. Not interesting, but it must be writable.
+      - ./caddy/config:/config
+
+    # The Caddyfile reads {$HEADSCALE_DOMAIN} and {$ACME_EMAIL} from here.
+    # .env is created by setup.sh and contains no secrets.
+    env_file:
+      - .env
+
+    networks:
+      - headscale
+
+networks:
+  headscale:
+    # The subnet is fixed on purpose. `trusted_proxies` in config.yaml has to
+    # name it exactly; if Docker were free to pick a different subnet after a
+    # `docker compose down`, Headscale would silently stop believing Caddy's
+    # X-Real-IP header and every node would be logged with the proxy's address.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

@@ -1,0 +1,214 @@
+# Headscale server configuration for LocalCast
+# -----------------------------------------------------------------------------
+# Target version: headscale v0.29.3  (see docker-compose.yml for the pinned image)
+# Derived from the upstream config-example.yaml for that exact tag:
+#   https://github.com/juanfont/headscale/blob/v0.29.3/config-example.yaml
+#
+# This file is a TEMPLATE. `setup.sh` copies it to ./config/config.yaml and
+# replaces the two example domains below. You can also copy it by hand and edit
+# the two lines marked «EDIT ME».
+#
+# Only the settings that matter for a LocalCast deployment are kept. Everything
+# omitted here keeps its upstream default. If you need a setting that is not
+# present, take it verbatim from the upstream file linked above — do not guess
+# the key name, several were renamed between 0.23 and 0.29.
+# -----------------------------------------------------------------------------
+
+
+# ---- Identity of the control server -----------------------------------------
+
+# «EDIT ME» — the URL Tailscale clients connect to. This is also the value you
+# paste into LocalCast's `controlUrl` field, character for character.
+#
+# It MUST be https. Caddy terminates the TLS; Headscale itself never sees a
+# certificate (see the TLS block at the bottom).
+# No trailing slash, no path.
+server_url: https://headscale.example.com
+
+# Where Headscale listens INSIDE its container. Caddy reaches it over the
+# private compose network as `headscale:8080`, so this has to be 0.0.0.0 and not
+# 127.0.0.1 — a loopback bind would be unreachable from the Caddy container.
+# The port is not published to the public internet; only Caddy is.
+listen_addr: 0.0.0.0:8080
+
+# Prometheus metrics and the debug handler. Bound to loopback inside the
+# container and not published by docker-compose.yml, so nothing external can
+# reach it. Set to "" to switch the listener off entirely.
+metrics_listen_addr: 127.0.0.1:9090
+
+# gRPC for *remote* CLI use. Left on loopback and unpublished: the `headscale`
+# CLI you will actually run goes through the unix socket below, not gRPC.
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+
+# CIDRs whose True-Client-IP / X-Real-IP / X-Forwarded-For headers are believed.
+# This MUST match the compose network subnet declared in docker-compose.yml.
+# If you leave it empty, every node's logged source IP becomes Caddy's container
+# IP. If you widen it beyond the proxy, clients can forge their own source IP.
+trusted_proxies:
+  - 172.28.0.0/24
+
+# Encryption key for the TS2021 (Noise) protocol. Generated on first start and
+# then never touched. It lives on the `lib` volume — losing it forces every node
+# to re-register.
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+
+# ---- Address allocation ------------------------------------------------------
+
+# The tailnet address space. These are the standard Tailscale CGNAT/ULA ranges.
+# Do not move them outside these ranges: the Tailscale client hard-codes
+# assumptions about them and fails in ways that are very hard to debug.
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+
+# ---- DERP relays -------------------------------------------------------------
+
+# DERP is the relay network used when two peers cannot reach each other
+# directly. LocalCast leans on it hard: an iPhone on a cellular carrier behind
+# CGNAT often cannot open a direct path to a home Windows machine on the first
+# packet, and the connection starts relayed before it upgrades.
+derp:
+  server:
+    # The *embedded* DERP server is off. Running your own relay means the video
+    # bytes of every non-direct connection cross your VPS, and it needs UDP/3478
+    # open plus real TLS on the Headscale process itself. Tailscale's public
+    # relay fleet below is free, global, and end-to-end encrypted — it can see
+    # ciphertext, not your files.
+    enabled: false
+
+  # Tailscale's public DERP map. Used even though the control plane is your own.
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+  paths: []
+  auto_update_enabled: true
+  update_frequency: 3h
+
+
+# ---- Node lifecycle ----------------------------------------------------------
+
+disable_check_updates: false
+
+node:
+  # 0 = nodes never expire on their own. A LocalCast server that silently
+  # dropped off the tailnet every 180 days would look exactly like a bug to the
+  # person using it, so leave this at 0 unless you have a policy reason.
+  # (Nodes can still be expired on demand: `headscale nodes expire -i <ID>`.)
+  expiry: 0
+
+  ephemeral:
+    inactivity_timeout: 30m
+
+
+# ---- Database ----------------------------------------------------------------
+
+database:
+  # SQLite. Upstream explicitly discourages Postgres — it is kept only for
+  # legacy installs and all new work targets SQLite.
+  type: sqlite
+
+  sqlite:
+    # On the `lib` volume. THIS FILE IS THE WHOLE SERVER. Back it up together
+    # with noise_private.key and you can rebuild the VPS from nothing.
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+    wal_autocheckpoint: 1000
+
+
+# ---- TLS: deliberately switched off ------------------------------------------
+#
+# Read this block before you change anything in it.
+#
+# Headscale has a built-in ACME client. It is OFF here because Caddy already
+# terminates TLS in front of it. Turning both on means two processes racing for
+# port 80 and a fast trip into a Let's Encrypt rate limit.
+#
+# More importantly: this block has NOTHING to do with certificates for your
+# nodes. It could only ever secure Headscale's own URL. Headscale cannot hand a
+# certificate to a node the way Tailscale's coordination server does, because
+# that needs the control server to implement `/machine/set-dns` and publish ACME
+# TXT records for the base domain. As of headscale v0.29.3 that is unimplemented
+# and tracked in issues #2527 and #2137 (both open, milestone v0.34).
+# `tailscale cert` and `tailscale serve` therefore do not work here, and neither
+# does Funnel (#1040, closed as not planned).
+#
+# That is why LocalCast asks you to choose a certificate strategy —
+# `external-proxy` or `dns01` — instead of getting one for free. See README.md
+# section 5.
+#
+acme_url: https://acme-v02.api.letsencrypt.org/directory
+acme_email: ""
+tls_letsencrypt_hostname: "" # empty => Headscale's own ACME client stays off
+tls_letsencrypt_cache_dir: /var/lib/headscale/cache
+tls_letsencrypt_challenge_type: HTTP-01
+tls_cert_path: ""
+tls_key_path: ""
+
+
+# ---- Logging -----------------------------------------------------------------
+
+log:
+  # `debug` is genuinely useful while a node refuses to register, and Headscale
+  # does not log pre-auth keys in full at any level. Put it back to `info` once
+  # things work — debug is noisy.
+  level: info
+  format: text
+
+
+# ---- Policy ------------------------------------------------------------------
+
+# ACLs. Empty path = no policy file = every node may talk to every other node,
+# which is what a single-household LocalCast tailnet wants. LocalCast does its
+# own per-device authorisation in its database on every request, so an ACL here
+# would be a second, quieter place to get permissions wrong.
+policy:
+  mode: file
+  path: ""
+
+
+# ---- DNS / MagicDNS ----------------------------------------------------------
+
+dns:
+  # MagicDNS is what makes the LocalCast server reachable as a name rather than
+  # a 100.x address. LocalCast's `hostname` setting (default `localcast`)
+  # becomes `localcast.<base_domain>`.
+  magic_dns: true
+
+  # «EDIT ME» — the MagicDNS suffix.
+  #
+  # THIS MUST BE A DIFFERENT DOMAIN FROM server_url ABOVE. Headscale rejects the
+  # configuration otherwise, and the reason is real: `headscale.example.com`
+  # resolves publicly to your VPS, while `*.net.example.com` must resolve to
+  # tailnet addresses for tailnet members only.
+  #
+  # Use a subdomain of a domain you own, e.g. `net.example.com`. Do NOT invent
+  # one — if you later choose the `dns01` certificate strategy, LocalCast needs
+  # to prove ownership of this domain to Let's Encrypt.
+  base_domain: net.example.com
+
+  # Force Headscale's DNS settings onto the client rather than merging with
+  # whatever the local network hands out. Without this, a hotel or carrier
+  # resolver can shadow the MagicDNS name.
+  override_local_dns: true
+
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 1.0.0.1
+
+  search_domains: []
+  extra_records: []
+
+
+# ---- Local CLI socket --------------------------------------------------------
+
+# The `headscale` CLI inside the container talks to the daemon over this socket.
+# docker-compose.yml mounts /var/run/headscale as a tmpfs because the container
+# runs read-only.
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"

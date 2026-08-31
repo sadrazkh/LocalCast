@@ -65,17 +65,29 @@ header, so no other process on the machine can reach it by pointing a browser at
 
 The original brief assumed `tailscale cert` works against Headscale. It does not.
 Certificate issuance needs the control server to implement `/machine/set-dns` and write ACME
-TXT records for the base domain; Headscale has not implemented it and the tracking issue has
-no ETA ([headscale#2527](https://github.com/juanfont/headscale/issues/2527),
-[headscale#2137](https://github.com/juanfont/headscale/issues/2137)). Funnel is likewise
-unimplemented ([headscale#1040](https://github.com/juanfont/headscale/issues/1040)).
+TXT records for the base domain; Headscale has not implemented it. Both tracking issues are
+open against milestone v0.34, four minors out with no due date
+([headscale#2527](https://github.com/juanfont/headscale/issues/2527),
+[headscale#2137](https://github.com/juanfont/headscale/issues/2137)), and the open PR is
+unmerged. Funnel is not merely unimplemented — its request is **closed as not planned**
+([headscale#1040](https://github.com/juanfont/headscale/issues/1040)), because Funnel depends
+on Tailscale's own ingress fleet. Verified against upstream on 2026-09-01 at Headscale
+v0.29.3.
 
 So `custom` mode offers two honest certificate strategies, chosen in the settings UI:
 
-- **`external-proxy`** — the user already terminates TLS (Caddy/Traefik/nginx) in front of
-  the node. LocalCast serves plain HTTP on the tailnet address and trusts the proxy.
 - **`dns01`** — LocalCast runs its own ACME client (DNS-01) against a domain the user owns,
   using an API token for a supported DNS provider. Certificates are cached and auto-renewed.
+  **This is the right choice for anyone actually streaming video.**
+- **`external-proxy`** — the user already terminates TLS (Caddy/Traefik/nginx) in front of
+  the node. LocalCast serves plain HTTP on the tailnet address and trusts the proxy.
+
+  A trap worth naming: a public certificate cannot be issued for a tailnet address over
+  HTTP-01, so in practice the proxy lives on the user's VPS and joins the tailnet — which
+  means **every media byte is relayed through that VPS**. For a 4K film that is the
+  difference between a direct peer-to-peer transfer and a rented uplink. The settings UI
+  says so at the point of choosing, rather than leaving the user to discover it from a
+  bandwidth bill.
 
 The UI must state which strategy is in force and must never show "connecting…" when the real
 state is "this mode cannot get a certificate without more input". A mode that cannot succeed
