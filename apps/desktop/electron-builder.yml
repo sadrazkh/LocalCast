@@ -1,0 +1,56 @@
+appId: net.localcast.desktop
+productName: LocalCast
+copyright: LocalCast
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**
+  - assets/icons/**
+  - package.json
+  # The workspace packages are hoisted to the repo root, so they have to be named
+  # explicitly or electron-builder will ship an app that cannot resolve them.
+  - '!node_modules/**'
+  - node_modules/@localcast/**
+
+extraResources:
+  # The Go sidecar. It is a plain executable launched as a child process — no service, no
+  # driver, and therefore no elevation prompt during install.
+  - from: ../../native/netedge/netedge.exe
+    to: netedge.exe
+  # SumatraPDF does the actual printing. Bundled so printing does not depend on whatever
+  # PDF reader the user happens to have.
+  - from: ../../vendor/bin
+    to: vendor
+    filter: ['**/*']
+  # The built PWA, served to phones by the Node server.
+  - from: ../pwa/dist
+    to: web
+    filter: ['**/*']
+  - from: assets
+    to: assets
+    filter: ['icons/**']
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: assets/icons/app-512.png
+  # Nothing here needs elevation: tsnet is userspace WireGuard, the server binds loopback,
+  # and printing goes through the ordinary spooler. Asking for admin would contradict the
+  # product's central promise.
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LocalCast
+  # Per-user install into %LOCALAPPDATA%, which is what keeps the whole flow UAC-free.
+  installerLanguages: [en_US]
+
+publish: null
