@@ -55,6 +55,9 @@ const IPC = {
   preflightProgress: 'preflight:progress',
   preflightOpenDoc: 'preflight:open-doc',
   preflightRunCommand: 'preflight:run-command',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  updateProgress: 'update:progress',
 } as const;
 
 const api = {
@@ -115,6 +118,15 @@ const api = {
     openDoc: (docPath: string) => ipcRenderer.invoke(IPC.preflightOpenDoc, docPath),
     runCommand: (id: string, command: string) =>
       ipcRenderer.invoke(IPC.preflightRunCommand, id, command),
+  },
+  updates: {
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    onProgress: (handler: (p: unknown) => void) => {
+      const listener = (_e: unknown, p: unknown) => handler(p);
+      ipcRenderer.on(IPC.updateProgress, listener);
+      return () => ipcRenderer.removeListener(IPC.updateProgress, listener);
+    },
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),

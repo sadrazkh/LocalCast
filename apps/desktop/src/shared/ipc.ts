@@ -60,6 +60,9 @@ export const IPC = {
   wizardState: 'wizard:state',
   wizardComplete: 'wizard:complete',
   openExternal: 'app:open-external',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  updateProgress: 'update:progress',
 } as const;
 
 export interface AppInfo {
@@ -131,6 +134,16 @@ export interface DesktopApi {
     list(): Promise<Printer[]>;
     refresh(): Promise<Printer[]>;
     setEnabled(id: string, enabled: boolean): Promise<void>;
+  };
+  updates: {
+    /** Asks GitHub whether a newer release exists. Never throws; errors come back as state. */
+    check(): Promise<import('../main/updates.js').UpdateState>;
+    /**
+     * Downloads the installer, verifies it against the release's SHA256SUMS and runs it.
+     * A portable build cannot replace a running executable, so it opens the release page.
+     */
+    install(): Promise<void>;
+    onProgress(handler: (p: { receivedBytes: number; totalBytes: number }) => void): () => void;
   };
   app: {
     info(): Promise<AppInfo>;

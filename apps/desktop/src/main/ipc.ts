@@ -5,6 +5,7 @@ import { IPC, type AppInfo, type PairingMintResult, type RedactedNetworkConfig }
 import type { NetEdge } from './netedge.js';
 import type { OperatorClient } from './operatorClient.js';
 import type { AppConfigStore } from './appConfig.js';
+import { checkForUpdate, downloadAndInstall } from './updates.js';
 
 /**
  * Registers every IPC handler. Each one is an explicit entry rather than a generic bridge,
@@ -195,6 +196,16 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.printersRefresh, () => operator().post('/printers/refresh'));
   ipcMain.handle(IPC.printerSetEnabled, (_e, id: string, enabled: boolean) =>
     operator().patch(`/printers/${encodeURIComponent(id)}`, { enabled }),
+  );
+
+  // ── updates ────────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.updateCheck, () => checkForUpdate());
+
+  ipcMain.handle(IPC.updateInstall, (event) =>
+    downloadAndInstall((progress) => {
+      // Only the window that asked; a background check should not make the tray draw a bar.
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.updateProgress, progress);
+    }),
   );
 
   // ── app ────────────────────────────────────────────────────────────────────

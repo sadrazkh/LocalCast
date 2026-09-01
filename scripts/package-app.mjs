@@ -42,6 +42,11 @@ function run(command, args, { shell = false, ...options } = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// Build first. electron-builder packages whatever is in `dist`, so without this it will
+// happily ship the previous build — the code runs, nothing warns, and the change you just
+// made is simply not in the installer. That is a very expensive kind of quiet.
+run(process.execPath, [join(ROOT, 'scripts', 'build-app.mjs'), process.argv[2]], { cwd: ROOT });
+
 run(process.execPath, [join(ROOT, 'scripts', 'prepack.mjs')], { cwd: ROOT });
 
 const electronVersion = JSON.parse(
@@ -52,6 +57,8 @@ console.log(`packaging ${process.argv[2]} against Electron ${electronVersion}`);
 
 run(
   join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder'),
-  ['--win', 'nsis', '--config.electronVersion', electronVersion],
+  // `--win` with no target list, so the config decides. Naming targets here would silently
+  // drop the portable and zip builds the moment someone adds one to electron-builder.yml.
+  ['--win', '--config.electronVersion', electronVersion],
   { cwd: appDir, shell: process.platform === 'win32' },
 );

@@ -104,7 +104,10 @@ jobs:
           # -print0/-d '' because electron-builder names the installers "LocalCast Setup
           # 0.1.0.exe" — a word-split on that copies four files that do not exist and reports
           # success for each.
-          find apps/desktop/release apps/desktop-client/release -maxdepth 1 -name '*.exe' -print0 \
+          # .zip as well as .exe now: the desktop app builds an installer, a portable single
+          # executable and an unpacked archive, and all three are things people install.
+          find apps/desktop/release apps/desktop-client/release -maxdepth 1 \
+            \( -name '*.exe' -o -name '*.zip' \) -print0 \
             | while IFS= read -r -d '' f; do cp "$f" dist-release/; done
           cp native/netedge/netedge.exe dist-release/
           ( cd apps/pwa/dist && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist-release/localcast-pwa.zip" . )
@@ -126,10 +129,19 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
-            Verify what you downloaded against `SHA256SUMS` before installing:
+            **Which file**
+
+            | File | What it is |
+            |------|------------|
+            | `LocalCast-Setup-*.exe` | Ordinary install. Settings live in `%APPDATA%`. |
+            | `LocalCast-Portable-*.exe` | One file, installs nothing. Keeps its data in `LocalCast-data` beside itself, so it travels on a USB stick. |
+            | `LocalCast-*-win-x64.zip` | The same thing unpacked. Run `LocalCast-Portable.cmd` for portable behaviour, or `LocalCast.exe` to use `%APPDATA%`. |
+            | `netedge.exe` | The network sidecar, already inside both builds. Published separately for inspection. |
+
+            Verify what you downloaded against `SHA256SUMS` before running it:
 
             ```powershell
-            Get-FileHash .\LocalCast-Setup.exe -Algorithm SHA256
+            Get-FileHash .\LocalCast-Setup-0.1.0.exe -Algorithm SHA256
             ```
 
             **Printing is not included.** SumatraPDF publishes no checksum, so this pipeline

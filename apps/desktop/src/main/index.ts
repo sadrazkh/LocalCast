@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { AppConfigStore, configPathFor } from './appConfig.js';
 import { broadcastEdgeStatus, registerIpc } from './ipc.js';
@@ -79,8 +79,31 @@ async function reportFatal(err: unknown): Promise<void> {
   app.exit(1);
 }
 
+/**
+ * Where a portable build keeps its data, or null for an ordinary install.
+ *
+ * Portable has to mean the *data* travels too. An executable that needs no installer but
+ * still writes to `%APPDATA%` is only half of it: copy the folder to another machine and the
+ * paired devices, the permission matrix and the tailnet identity are all left behind, which
+ * is the opposite of what someone carrying this on a stick wants.
+ *
+ * Two ways in, both explicit — nothing here guesses from the install location:
+ *   - `PORTABLE_EXECUTABLE_DIR`, which electron-builder's portable target sets to the
+ *     directory the user actually launched from (the exe itself unpacks to temp);
+ *   - `LOCALCAST_PORTABLE=1`, which the bundled launcher sets for the zip build.
+ */
+function portableRoot(): string | null {
+  const fromBuilder = process.env['PORTABLE_EXECUTABLE_DIR'];
+  if (fromBuilder) return join(fromBuilder, 'LocalCast-data');
+  if (process.env['LOCALCAST_PORTABLE'] === '1') {
+    return join(dirname(app.getPath('exe')), 'LocalCast-data');
+  }
+  return null;
+}
+
 function paths() {
-  const dataDir = join(app.getPath('appData'), 'LocalCast');
+  const portable = portableRoot();
+  const dataDir = portable ?? join(app.getPath('appData'), 'LocalCast');
   const appRoot = app.getAppPath();
   // In development `app.getAppPath()` is apps/desktop, so the repo root is two levels up.
   // `process.resourcesPath` must not be used here: unpackaged, it points inside Electron's
@@ -100,6 +123,7 @@ function paths() {
         ? join(process.resourcesPath, 'web')
         : join(repoRoot, 'apps', 'pwa', 'dist'),
     preloadDir: join(appRoot, 'dist', 'preload'),
+    portable: portable !== null,
     // The Electron-ABI copy of better_sqlite3, kept out of node_modules so the Node-ABI copy
     // there stays intact for the test suite. `scripts/rebuild-native.mjs` produces it.
     nativeBinding: app.isPackaged

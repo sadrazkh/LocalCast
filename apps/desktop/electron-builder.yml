@@ -10,10 +10,19 @@ files:
   - dist/**
   - assets/icons/**
   - package.json
-  # The workspace packages are hoisted to the repo root, so they have to be named
-  # explicitly or electron-builder will ship an app that cannot resolve them.
-  - '!node_modules/**'
-  - node_modules/@localcast/**
+  # Nothing excludes node_modules here, and that is deliberate.
+  #
+  # It used to say `'!node_modules/**'` with @localcast added back by hand, which produced an
+  # installer that launched and immediately died with:
+  #
+  #   Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from
+  #   ...\resources\app.asar\dist\main\appConfig.js
+  #
+  # In an npm workspace every third-party dependency is hoisted to the repository root, so
+  # that one exclusion dropped zod, express, jose, qrcode and better-sqlite3 along with the
+  # rest. electron-builder resolves the production dependency tree itself and follows the
+  # hoisting; the exclusion was solving a problem that did not exist and creating one that
+  # only appears after packaging.
 
 extraResources:
   # The Go sidecar. It is a plain executable launched as a child process — no service, no
@@ -59,9 +68,25 @@ extraResources:
     to: assets
     filter: ['icons/**']
 
+# Sits beside LocalCast.exe rather than inside resources, because it is for the user to
+# double-click. It is harmless in an installed copy — running it there simply starts the same
+# app in portable mode — and it is the whole point of the zip build.
+extraFiles:
+  - from: assets/LocalCast-Portable.cmd
+    to: LocalCast-Portable.cmd
+
 win:
   target:
     - target: nsis
+      arch: [x64]
+    # A single executable that installs nothing. electron-builder sets
+    # PORTABLE_EXECUTABLE_DIR when it runs, which is how the app knows to keep its database
+    # and tailnet identity beside the exe rather than in %APPDATA%.
+    - target: portable
+      arch: [x64]
+    # The same thing unpacked, for anyone who would rather see the files. Its launcher sets
+    # LOCALCAST_PORTABLE=1 to get the same behaviour.
+    - target: zip
       arch: [x64]
   icon: assets/icons/app-512.png
   # Nothing here needs elevation: tsnet is userspace WireGuard, the server binds loopback,
@@ -69,7 +94,12 @@ win:
   # product's central promise.
   requestedExecutionLevel: asInvoker
 
+# Distinct, sortable names. Three Windows artifacts land in one release directory and
+# "LocalCast 0.1.0.exe" next to "LocalCast Setup 0.1.0.exe" is a coin toss for the user.
+artifactName: LocalCast-${version}-${os}-${arch}.${ext}
+
 nsis:
+  artifactName: LocalCast-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -78,5 +108,10 @@ nsis:
   shortcutName: LocalCast
   # Per-user install into %LOCALAPPDATA%, which is what keeps the whole flow UAC-free.
   installerLanguages: [en_US]
+
+portable:
+  artifactName: LocalCast-Portable-${version}.${ext}
+  # Shown while the single exe unpacks itself, which takes a moment at this size.
+  splashImage: null
 
 publish: null
