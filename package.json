@@ -11,12 +11,13 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @localcast/contract && npm run build -w @localcast/client-core && npm run build -w @localcast/server && npm run build -w @localcast/pwa && npm run build -w @localcast/desktop && npm run build -w @localcast/desktop-client",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test:run --workspaces --if-present",
     "icons": "node scripts/generate-icons.mjs",
     "netedge:build": "cd native/netedge && go build -o netedge.exe ./cmd/netedge",
-    "netedge:test": "cd native/netedge && go test ./..."
+    "netedge:test": "cd native/netedge && go test ./...",
+    "//build": "Explicit order, not --workspaces: contract and client-core publish compiled dist, and npm runs workspaces alphabetically, so client-core would build against a contract that does not exist yet. ui-kit is absent because it publishes from source."
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
