@@ -28,6 +28,13 @@ var legalTransitions = map[protocol.EdgeState][]protocol.EdgeState{
 	protocol.StateLoginRequired: {
 		protocol.StateConnecting,
 		protocol.StateObtainingCertificate,
+		// Straight to connected, with no certificate step in between, is how the funnel and
+		// external-proxy paths finish: neither holds a certificate of its own, so bringUp goes
+		// from "the user signed in" to "serving" in one move. While this was missing,
+		// SetConnected returned an error and changed nothing, so a node that was up and
+		// proxying traffic still showed a sign-in prompt — with a URL that had already been
+		// used — for the rest of the process's life.
+		protocol.StateConnected,
 	},
 	protocol.StateConnecting: {
 		// Back to login-required is reachable: a node whose key was revoked while it was

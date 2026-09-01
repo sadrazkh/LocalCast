@@ -45,6 +45,7 @@ func TestCanTransition(t *testing.T) {
 		{starting, login, true, "no auth key, the user must sign in"},
 		{login, connecting, true, "the user signed in"},
 		{login, cert, true, "signed in and the node was already up"},
+		{login, connected, true, "funnel and external-proxy hold no certificate and skip that step"},
 		{connecting, login, true, "the key was revoked mid-connect"},
 
 		// restart in place: spec 2.4 says switching control planes must not exit the process
@@ -189,6 +190,41 @@ func TestClearStaleFields(t *testing.T) {
 	}
 	if got.Host != nil || got.CertExpiresAt != nil || got.Peers != 0 {
 		t.Errorf("a restart must forget the old generation's identity: %+v", got)
+	}
+}
+
+// TestLoginRequiredToConnected is the path a funnel or external-proxy node takes the moment
+// the user finishes signing in: neither holds a certificate of its own, so bringUp never
+// enters obtaining-certificate and goes straight from login-required to connected.
+//
+// While that move was refused, Transition returned an error and changed nothing, so a node
+// that was up and proxying traffic went on showing a sign-in prompt — with a URL that had
+// already been used — for the rest of the process's life.
+func TestLoginRequiredToConnected(t *testing.T) {
+	s := NewStatusStore(fixedClock())
+	mustAll(t, s.SetStarting(), s.SetConnecting())
+
+	const url = "https://login.tailscale.com/a/16fe082601b32f"
+	if err := s.SetLoginRequired(url); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get(); got.LoginURL == nil || *got.LoginURL != url {
+		t.Fatalf("login URL not published: %+v", got)
+	}
+
+	if err := s.SetConnected("localcast.tail1234.ts.net", "https://localcast.tail1234.ts.net", nil); err != nil {
+		t.Fatalf("login-required -> connected must be legal: %v", err)
+	}
+
+	got := s.Get()
+	if got.State != protocol.StateConnected {
+		t.Errorf("state = %q, want connected", got.State)
+	}
+	if got.LoginURL != nil {
+		t.Errorf("a consumed login URL survived into connected: %q", *got.LoginURL)
+	}
+	if got.Host == nil || *got.Host != "localcast.tail1234.ts.net" {
+		t.Errorf("host = %v, want the MagicDNS name", got.Host)
 	}
 }
 

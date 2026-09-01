@@ -53,6 +53,22 @@ const (
 
 	// loginURLWait is how long Login waits for the daemon to produce an interactive URL.
 	loginURLWait = 20 * time.Second
+
+	// loginNudgeDelay is how long the bring-up poll waits, after first seeing NeedsLogin with
+	// no URL, before asking for an interactive login itself.
+	//
+	// tsnet.Server.Start already calls StartLoginInteractive when the node comes up without a
+	// key. A second call while the first is still in flight does not help and actively hurts:
+	// it restarts controlclient's auth routine, and on a real run that cancelled the pending
+	// control-key fetch — `TryLogin: fetch control key: Get
+	// "https://controlplane.tailscale.com/key?v=109": context canceled` — costing about five
+	// seconds during which Status reports NeedsLogin with an empty AuthURL and there is
+	// nothing for the sign-in button to open.
+	//
+	// The nudge is kept rather than deleted because tsnet only makes that call once, at start:
+	// a node whose key is revoked later drops back to NeedsLogin with nobody asking on its
+	// behalf. It now fires only once tsnet's own attempt has visibly produced nothing.
+	loginNudgeDelay = 10 * time.Second
 )
 
 // logFunc is the logging hook every type in this package takes, so nothing writes to a
@@ -159,6 +175,7 @@ type Edge struct {
 type instance struct {
 	srv    *tsnet.Server
 	lc     localClient
+	login  *loginPublisher
 	cancel context.CancelFunc
 	done   chan struct{}
 
@@ -313,13 +330,18 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 		return nil, err
 	}
 
+	// One publisher per generation, shared by the status poll and by the two log hooks below,
+	// so whichever of them sees the login URL first is the only one that publishes it.
+	pub := newLoginPublisher(e.opts.Status, e.opts.Logf)
+
 	srv := &tsnet.Server{
 		Dir:      dir,
 		Hostname: cfg.Hostname,
 		// tsnet's own chatter is debug; UserLogf is the handful of lines meant for a person,
-		// such as the interactive login prompt.
-		Logf:     func(format string, args ...any) { e.opts.Logf(protocol.LogDebug, format, args...) },
-		UserLogf: func(format string, args ...any) { e.opts.Logf(protocol.LogInfo, format, args...) },
+		// such as the interactive login prompt. Both are wrapped so the login URL is captured
+		// from whichever of them carries it — see loginLineMarkers.
+		Logf:     tsnetLogf(protocol.LogDebug, pub, e.opts.Logf),
+		UserLogf: tsnetLogf(protocol.LogInfo, pub, e.opts.Logf),
 	}
 	if cfg.Mode == protocol.ModeCustom {
 		srv.ControlURL = cfg.ControlURL
@@ -342,7 +364,7 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 	var lc localClient = rawLC
 
 	ictx, cancel := context.WithCancel(ctx)
-	inst := &instance{srv: srv, lc: lc, cancel: cancel, done: make(chan struct{})}
+	inst := &instance{srv: srv, lc: lc, login: pub, cancel: cancel, done: make(chan struct{})}
 
 	go func() {
 		defer close(inst.done)
@@ -509,6 +531,7 @@ func (e *Edge) waitForRunning(ctx context.Context, inst *instance, cfg protocol.
 	defer ticker.Stop()
 
 	loginStarted := false
+	var needsLoginSince time.Time
 	var consecutiveErrors int
 
 	for {
@@ -535,15 +558,24 @@ func (e *Edge) waitForRunning(ctx context.Context, inst *instance, cfg protocol.
 				// than publishing an address that will change.
 
 			case ipn.NeedsLogin.String(), ipn.NeedsMachineAuth.String():
-				if st.AuthURL != "" {
-					if err := e.opts.Status.SetLoginRequired(st.AuthURL); err != nil {
-						e.opts.Logf(protocol.LogWarn, "%v", err)
-					}
-				} else if !loginStarted {
-					// VERIFY: with Start() rather than Up(), tsnet may sit in NeedsLogin
-					// without ever producing an AuthURL until login is started explicitly.
-					// This nudge is what turns that into a URL Electron can open.
+				// time.Now for the same reason as in Login: this loop is paced by a real
+				// ticker, so its own clock has to be the real one too.
+				if needsLoginSince.IsZero() {
+					needsLoginSince = time.Now()
+				}
+				switch {
+				case st.AuthURL != "":
+					// publish, not SetLoginRequired: the same URL arrives here twice a second
+					// until the user signs in, and it may also have arrived through tsnet's
+					// log first. Only a genuine change reaches the tray.
+					inst.login.publish(st.AuthURL)
+
+				case !loginStarted && time.Since(needsLoginSince) >= loginNudgeDelay:
+					// tsnet has had its chance and produced nothing; ask ourselves. See
+					// loginNudgeDelay for why this waits instead of firing immediately.
 					loginStarted = true
+					e.opts.Logf(protocol.LogInfo,
+						"no login URL after %s; asking the control server for one", loginNudgeDelay)
 					if err := inst.lc.StartLoginInteractive(ctx); err != nil {
 						e.opts.Logf(protocol.LogWarn, "could not start an interactive login: %v", err)
 					}
@@ -597,19 +629,30 @@ func (e *Edge) Login(ctx context.Context) (string, error) {
 		return "", &edgeError{code: protocol.ErrCodeEdgeNotReady, msg: "the tailnet node is not running"}
 	}
 
+	// What the store held before we asked. Anything that appears there after this point came
+	// from the log scanner in response to this request; anything that was already there may be
+	// the link from a session the user has since signed out of, and handing that back would
+	// send them to a page that no longer works.
+	before := loginURLOf(e.opts.Status.Get())
+
 	if err := inst.lc.StartLoginInteractive(ctx); err != nil {
 		return "", &edgeError{code: protocol.ErrCodeEdgeNotReady, msg: "could not start an interactive login", err: err}
 	}
 
+	// time.Now, not Options.Now: this loop is paced by a real ticker, and a deadline from an
+	// injectable clock that a test had frozen would never be reached.
 	deadline := time.Now().Add(loginURLWait)
 	ticker := time.NewTicker(statusPollInterval)
 	defer ticker.Stop()
 	for time.Now().Before(deadline) {
 		if st, err := inst.lc.Status(ctx); err == nil && st.AuthURL != "" {
-			if serr := e.opts.Status.SetLoginRequired(st.AuthURL); serr != nil {
-				e.opts.Logf(protocol.LogWarn, "%v", serr)
-			}
+			inst.login.publish(st.AuthURL)
 			return st.AuthURL, nil
+		}
+		// The log scanner is the other source, and it can see the URL before Status reports
+		// it. The caller wants a link to open, not a particular way of having found one.
+		if now := loginURLOf(e.opts.Status.Get()); now != "" && now != before {
+			return now, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -727,6 +770,15 @@ func certDomainFor(cfg protocol.NetworkConfig, host string) string {
 		return cfg.CertDomain
 	}
 	return host
+}
+
+// loginURLOf reads the published login URL out of a snapshot, treating "no URL" and "not
+// waiting for a login" as the same empty answer.
+func loginURLOf(st protocol.EdgeStatus) string {
+	if st.State != protocol.StateLoginRequired || st.LoginURL == nil {
+		return ""
+	}
+	return *st.LoginURL
 }
 
 // onlinePeers counts peers that are up, which is what the tray means by "devices connected".
