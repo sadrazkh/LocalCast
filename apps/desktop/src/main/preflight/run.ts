@@ -5,7 +5,12 @@ import type {
   PrerequisiteStatus,
 } from '../../shared/preflight.js';
 import type { PreflightContext } from './context.js';
-import { detectNativeModules, detectNetEdge, detectPrintHelper } from './detect.js';
+import {
+  detectNativeModules,
+  detectNetEdge,
+  detectPrintHelper,
+  NETEDGE_SEVERITY,
+} from './detect.js';
 
 /**
  * Runs every detector and answers the one question startup depends on: may the app proceed?
@@ -70,7 +75,10 @@ async function detectAll(ctx: PreflightContext): Promise<PreflightReport> {
   // Concurrent: `go version` spawns a process and the native module load touches the disk,
   // and this sits directly in front of the first window the user sees.
   const items = await Promise.all([
-    guard('netedge', 'blocking', () => detectNetEdge(ctx)),
+    // NETEDGE_SEVERITY, not a literal. A detector that throws would otherwise come back
+    // blocking and stop the app over a sidecar it does not need — reintroducing, through the
+    // error path, exactly the behaviour making sign-in optional was meant to remove.
+    guard('netedge', NETEDGE_SEVERITY, () => detectNetEdge(ctx)),
     guard('print-helper', 'degrading', () => detectPrintHelper(ctx)),
     guard('native-modules', 'blocking', () => detectNativeModules(ctx.nativeBinding)),
   ]);

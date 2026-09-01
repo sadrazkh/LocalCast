@@ -10,7 +10,9 @@ package edge
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -58,6 +60,15 @@ const (
 
 	// loginURLWait is how long Login waits for the daemon to produce an interactive URL.
 	loginURLWait = 20 * time.Second
+
+	// maxDirKeyLen caps the state-directory name derived from a control URL. Windows path
+	// components are capped well below this.
+	maxDirKeyLen = 64
+
+	// dirKeyDigestLen is how much of the URL digest is appended to a name that had to be
+	// truncated. 12 hex characters is 48 bits — far more than enough to keep the handful of
+	// control servers one machine ever sees apart, and short enough to leave the name readable.
+	dirKeyDigestLen = 12
 
 	// loginNudgeDelay is how long the bring-up poll waits, after first seeing NeedsLogin with
 	// no URL, before asking for an interactive login itself.
@@ -172,6 +183,22 @@ type Edge struct {
 	cfg     protocol.NetworkConfig
 	inst    *instance
 	baseCtx context.Context
+
+	// shutdownWait is how long each stage of a teardown may take. It is a field rather than
+	// the constant for the same reason watch takes its poll interval as a parameter: a test
+	// that drives a generation whose bring-up is wedged should not have to spend
+	// shutdownTimeout per switch to do it.
+	shutdownWait time.Duration
+
+	// genMu guards gen, the number of the generation the process is currently trying to run.
+	//
+	// It is deliberately not e.mu. replace holds e.mu for the whole teardown, and a bring-up
+	// goroutine that had to take e.mu in order to publish a status change would block there
+	// for as long as the teardown lasts — turning every switch into a stall on the very
+	// goroutine the teardown is waiting for. The two locks are only ever taken in the order
+	// e.mu → genMu, so there is no cycle.
+	genMu sync.Mutex
+	gen   uint64
 }
 
 // instance is one generation of the tsnet node: the server, its listener, the HTTP server
@@ -184,6 +211,10 @@ type instance struct {
 	login  *loginPublisher
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// gen is the generation number this instance was launched as. Every status change its
+	// goroutines make is checked against Edge.gen first; see Edge.publish.
+	gen uint64
 
 	// The bring-up goroutine fills these in while another goroutine may be tearing the
 	// generation down, so they are behind a lock. Everything above is written once, before
@@ -237,7 +268,60 @@ func New(cfg protocol.NetworkConfig, opts Options) (*Edge, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	return &Edge{opts: opts, cfg: cfg, baseCtx: context.Background()}, nil
+	return &Edge{
+		opts:         opts,
+		cfg:          cfg,
+		baseCtx:      context.Background(),
+		shutdownWait: shutdownTimeout,
+	}, nil
+}
+
+// ─── generations ─────────────────────────────────────────────────────────────
+//
+// A generation is one attempt to run one configuration. The number exists because
+// instance.stop waits only a bounded time for the bring-up goroutine to notice it was
+// cancelled: a DNS-01 issuance can hold bringUp for dns01Timeout, and waitForRunning has no
+// deadline at all, so a generation can outlive the switch that replaced it. Everything such a
+// goroutine still does to the *shared* status store after that point is a lie about a node
+// that no longer exists — most damagingly a final SetConnected carrying the previous
+// tailnet's address, which lands on top of the new generation's "connecting" and leaves the
+// tray green for a node the user has just switched away from.
+
+// retire ends the current generation and returns the number of the one replacing it. Callers
+// take it before touching the outgoing instance, so a generation loses the right to publish
+// the moment the user asks for something else — not whenever its goroutine gets round to
+// noticing.
+func (e *Edge) retire() uint64 {
+	e.genMu.Lock()
+	defer e.genMu.Unlock()
+	e.gen++
+	return e.gen
+}
+
+// publish applies a status change on behalf of one generation, dropping it if that generation
+// has since been retired. It reports whether the change reached the store.
+//
+// The generation check and the write happen under one lock, so a retirement cannot slip
+// between them.
+func (e *Edge) publish(gen uint64, write func() error) bool {
+	e.genMu.Lock()
+	defer e.genMu.Unlock()
+	if gen != e.gen {
+		return false
+	}
+	if err := write(); err != nil {
+		e.opts.Logf(protocol.LogWarn, "%v", err)
+		return false
+	}
+	return true
+}
+
+// live reports whether gen is still the generation the process is trying to run. Use it to
+// skip work, not to gate a publish — publish does its own check without the gap this leaves.
+func (e *Edge) live(gen uint64) bool {
+	e.genMu.Lock()
+	defer e.genMu.Unlock()
+	return gen == e.gen
 }
 
 // Config returns the configuration currently in force, without secrets. Callers put this on
@@ -284,12 +368,16 @@ func (e *Edge) Restart() error {
 // Stop tears the running generation down and leaves the process alive.
 func (e *Edge) Stop() {
 	e.mu.Lock()
+	// Retire before the teardown, so a bring-up goroutine that outlives the bounded wait below
+	// cannot publish "connected" on top of the stopped status this method is about to set.
+	e.retire()
 	inst := e.inst
 	e.inst = nil
+	wait := e.shutdownWait
 	e.mu.Unlock()
 
 	if inst != nil {
-		inst.stop()
+		inst.stop(wait)
 	}
 	if err := e.opts.Status.SetStopped(); err != nil {
 		e.opts.Logf(protocol.LogWarn, "%v", err)
@@ -301,25 +389,32 @@ func (e *Edge) replace(cfg protocol.NetworkConfig) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	gen := e.retire()
+
+	// Say what is about to happen before doing it.
+	//
+	// The teardown below is bounded but not quick: instance.stop allows shutdownWait per
+	// stage, and it is entered with the node already cancelled. Publishing "starting" only
+	// afterwards left the tray showing a green dot and the previous tailnet's address for that
+	// whole window — measured at seconds on an ordinary switch, up to two stages of
+	// shutdownWait when a DNS-01 issuance is what is being cancelled. The user pressed Save;
+	// the node is going away; saying so first is the honest order.
+	e.publish(gen, e.opts.Status.SetStarting)
+
 	// Down first, then up. The two generations must not both hold the tsnet state
 	// directory, and in a same-mode restart they would be pointed at the same one.
 	if e.inst != nil {
 		e.opts.Logf(protocol.LogInfo, "stopping the current tailnet node before applying a new configuration")
-		e.inst.stop()
+		e.inst.stop(e.shutdownWait)
 		e.inst = nil
 	}
 
 	e.cfg = cfg
-	if err := e.opts.Status.SetStarting(); err != nil {
-		e.opts.Logf(protocol.LogWarn, "%v", err)
-	}
 	e.opts.Logf(protocol.LogInfo, "starting the tailnet node: %s", cfg.String())
 
-	inst, err := e.launch(e.baseCtx, cfg)
+	inst, err := e.launch(e.baseCtx, cfg, gen)
 	if err != nil {
-		if serr := e.opts.Status.SetError(codeOf(err), err.Error()); serr != nil {
-			e.opts.Logf(protocol.LogWarn, "%v", serr)
-		}
+		e.publish(gen, func() error { return e.opts.Status.SetError(codeOf(err), err.Error()) })
 		return err
 	}
 	e.inst = inst
@@ -330,7 +425,7 @@ func (e *Edge) replace(cfg protocol.NetworkConfig) error {
 // authenticate, fetching a certificate, opening the listener — to a goroutine, so the HTTP
 // handler that triggered a mode change gets its response back immediately and the UI
 // follows the status stream instead of a hanging request.
-func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instance, error) {
+func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig, gen uint64) (*instance, error) {
 	dir, err := e.tsnetDir(cfg)
 	if err != nil {
 		return nil, err
@@ -338,7 +433,12 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 
 	// One publisher per generation, shared by the status poll and by the two log hooks below,
 	// so whichever of them sees the login URL first is the only one that publishes it.
+	//
+	// commit routes its write through the generation guard: tsnet goes on printing its sign-in
+	// prompt every five seconds until it is closed, so a node being torn down would otherwise
+	// hand the settings page a sign-in link for the control server the user has just left.
 	pub := newLoginPublisher(e.opts.Status, e.opts.Logf)
+	pub.commit = func(write func() error) bool { return e.publish(gen, write) }
 
 	srv := &tsnet.Server{
 		Dir:      dir,
@@ -370,7 +470,7 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 	var lc localClient = rawLC
 
 	ictx, cancel := context.WithCancel(ctx)
-	inst := &instance{srv: srv, lc: lc, login: pub, cancel: cancel, done: make(chan struct{})}
+	inst := &instance{srv: srv, lc: lc, login: pub, cancel: cancel, done: make(chan struct{}), gen: gen}
 
 	go func() {
 		defer close(inst.done)
@@ -381,9 +481,7 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 				return
 			}
 			e.opts.Logf(protocol.LogError, "tailnet node failed: %v", err)
-			if serr := e.opts.Status.SetError(codeOf(err), err.Error()); serr != nil {
-				e.opts.Logf(protocol.LogWarn, "%v", serr)
-			}
+			e.publish(gen, func() error { return e.opts.Status.SetError(codeOf(err), err.Error()) })
 		}
 	}()
 
@@ -392,15 +490,13 @@ func (e *Edge) launch(ctx context.Context, cfg protocol.NetworkConfig) (*instanc
 
 // bringUp runs the slow half of a generation's start.
 func (e *Edge) bringUp(ctx context.Context, inst *instance, cfg protocol.NetworkConfig) error {
-	if err := e.opts.Status.SetConnecting(); err != nil {
-		e.opts.Logf(protocol.LogWarn, "%v", err)
-	}
+	e.publish(inst.gen, e.opts.Status.SetConnecting)
 
 	host, err := e.waitForRunning(ctx, inst, cfg)
 	if err != nil {
 		return err
 	}
-	e.opts.Status.SetHost(host)
+	e.publish(inst.gen, func() error { e.opts.Status.SetHost(host); return nil })
 	e.opts.Logf(protocol.LogInfo, "tailnet node is running as %s", host)
 
 	// Funnel terminates TLS at Tailscale's ingress with the control-plane certificate, so
@@ -413,9 +509,7 @@ func (e *Edge) bringUp(ctx context.Context, inst *instance, cfg protocol.Network
 	// external-proxy holds no certificate of its own, so announcing that one is being
 	// obtained would be a lie the settings page renders verbatim.
 	if cfg.CertStrategy != protocol.CertExternalProxy {
-		if err := e.opts.Status.SetObtainingCertificate(); err != nil {
-			e.opts.Logf(protocol.LogWarn, "%v", err)
-		}
+		e.publish(inst.gen, e.opts.Status.SetObtainingCertificate)
 	}
 
 	deps := certDeps{
@@ -439,6 +533,18 @@ func (e *Edge) bringUp(ctx context.Context, inst *instance, cfg protocol.Network
 	tlsCfg, err := provider.TLSConfig(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Everything above can take minutes — a DNS-01 issuance is bounded only by dns01Timeout —
+	// and instance.stop waits a bounded time before giving up on this goroutine and moving on.
+	// A generation that has already been replaced by then must not go on to open a listener:
+	// the http.Server built below would be handed to an instance nobody holds a reference to
+	// any more, and so would never be shut down.
+	if !e.live(inst.gen) {
+		return &edgeError{
+			code: protocol.ErrCodeEdgeNotReady,
+			msg:  "this tailnet node was replaced before it finished starting",
+		}
 	}
 
 	ln, err := inst.srv.Listen("tcp", fmt.Sprintf(":%d", tailnetPort))
@@ -467,9 +573,7 @@ func (e *Edge) bringUp(ctx context.Context, inst *instance, cfg protocol.Network
 	inst.setHTTP(httpSrv)
 	go serve(httpSrv, ln, e.opts.Logf)
 
-	if err := e.opts.Status.SetConnected(host, "", provider.ExpiresAt()); err != nil {
-		e.opts.Logf(protocol.LogWarn, "%v", err)
-	}
+	e.publish(inst.gen, func() error { return e.opts.Status.SetConnected(host, "", provider.ExpiresAt()) })
 	go e.watch(ctx, inst, connectedIdentity{host: host}, peerPollInterval)
 	return nil
 }
@@ -500,9 +604,7 @@ func (e *Edge) serveFunnel(ctx context.Context, inst *instance, host string) err
 	go serve(httpSrv, ln, e.opts.Logf)
 
 	funnelURL := "https://" + host
-	if err := e.opts.Status.SetConnected(host, funnelURL, nil); err != nil {
-		e.opts.Logf(protocol.LogWarn, "%v", err)
-	}
+	e.publish(inst.gen, func() error { return e.opts.Status.SetConnected(host, funnelURL, nil) })
 	e.opts.Logf(protocol.LogInfo, "published on the public internet at %s", funnelURL)
 	go e.watch(ctx, inst, connectedIdentity{host: host, funnelURL: funnelURL}, peerPollInterval)
 	return nil
@@ -665,10 +767,10 @@ func (e *Edge) watch(ctx context.Context, inst *instance, id connectedIdentity, 
 			// Authentication first: if the node has dropped out, the peer count that follows
 			// is a detail about a node that is not carrying traffic anyway.
 			e.reconcileAuth(ctx, inst, st, id, &ep)
-			e.opts.Status.SetPeers(onlinePeers(st))
+			e.publish(inst.gen, func() error { e.opts.Status.SetPeers(onlinePeers(st)); return nil })
 		}
 		if _, certs := inst.parts(); certs != nil {
-			e.opts.Status.SetCertExpiry(certs.ExpiresAt())
+			e.publish(inst.gen, func() error { e.opts.Status.SetCertExpiry(certs.ExpiresAt()); return nil })
 		}
 	}
 }
@@ -709,9 +811,7 @@ func (e *Edge) reconcileAuth(ctx context.Context, inst *instance, st *ipnstate.S
 		// that goes on claiming "connected" is the lie this poll exists to stop, and the link
 		// can follow when there is one.
 		if e.opts.Status.Get().State != protocol.StateLoginRequired {
-			if err := e.opts.Status.SetLoginRequired(""); err != nil {
-				e.opts.Logf(protocol.LogWarn, "%v", err)
-			}
+			e.publish(inst.gen, func() error { return e.opts.Status.SetLoginRequired("") })
 		}
 
 		switch {
@@ -742,8 +842,9 @@ func (e *Edge) reconcileAuth(ctx context.Context, inst *instance, st *ipnstate.S
 		if _, certs := inst.parts(); certs != nil {
 			expires = certs.ExpiresAt()
 		}
-		if err := e.opts.Status.SetConnected(id.host, id.funnelURL, expires); err != nil {
-			e.opts.Logf(protocol.LogWarn, "%v", err)
+		if !e.publish(inst.gen, func() error {
+			return e.opts.Status.SetConnected(id.host, id.funnelURL, expires)
+		}) {
 			return
 		}
 		e.opts.Logf(protocol.LogInfo, "the tailnet node is signed in again and serving as %s", id.host)
@@ -869,8 +970,21 @@ func sanitizeDirKey(controlURL string) string {
 	}
 	// Windows path components are capped well below this; a long Headscale URL would
 	// otherwise produce a directory the OS refuses to create.
-	if len(out) > 64 {
-		out = out[:64]
+	//
+	// Truncating on its own was not safe. Two Headscale deployments that differ only past the
+	// cut — the same host with different path prefixes is an ordinary reverse-proxy layout —
+	// mapped onto one state directory, and a tsnet state file holds a node key that means
+	// nothing to the other control server. The user would be silently re-registered on every
+	// switch and asked to sign in again on the way back, which is exactly what spec 2.4
+	// promises will not happen. A digest of the whole normalised URL disambiguates.
+	//
+	// Only names that are actually too long get the suffix, so every URL short enough to be
+	// left alone keeps the directory it already has on disk: adding the digest unconditionally
+	// would orphan the state of every working deployment at the next upgrade, which is the
+	// same failure by another route.
+	if len(out) > maxDirKeyLen {
+		sum := sha256.Sum256([]byte(s))
+		out = out[:maxDirKeyLen-dirKeyDigestLen-1] + "-" + hex.EncodeToString(sum[:])[:dirKeyDigestLen]
 	}
 	return out
 }
@@ -928,9 +1042,15 @@ func onlinePeers(st *ipnstate.Status) int {
 
 // stop tears one generation down. It is safe to call once; replace and Stop both drop their
 // reference immediately afterwards.
-func (i *instance) stop() {
+//
+// wait bounds each stage. Edge passes its shutdownWait; see the field for why it is not the
+// constant.
+func (i *instance) stop(wait time.Duration) {
 	if i == nil {
 		return
+	}
+	if wait <= 0 {
+		wait = shutdownTimeout
 	}
 	i.cancel()
 
@@ -940,12 +1060,12 @@ func (i *instance) stop() {
 	// somebody else's DNS propagation.
 	select {
 	case <-i.done:
-	case <-time.After(shutdownTimeout):
+	case <-time.After(wait):
 	}
 
 	httpSrv, certs := i.parts()
 	if httpSrv != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
 		// Shutdown closes the listener too, so the tsnet server is not left with a socket
 		// bound to a port the next generation wants.
 		_ = httpSrv.Shutdown(ctx)

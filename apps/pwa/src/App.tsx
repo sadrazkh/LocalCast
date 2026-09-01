@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { Spinner } from '@localcast/ui-kit';
+import { useCapabilities } from './capabilities/store.js';
+import { useCapabilityReport } from './capabilities/useCapabilityReport.js';
 import { useClientContext, useConnectionState } from './client/ClientProvider.js';
+import { useAppT } from './i18n/messages.js';
 import { navigate, useRoute } from './router.js';
 import { TabBar } from './components/TabBar.js';
 import { LibraryRoute } from './routes/LibraryRoute.js';
@@ -23,8 +26,13 @@ export interface AppProps {
 
 export function App({ decode }: AppProps) {
   const route = useRoute();
+  const at = useAppT();
   const { session, ready } = useClientContext();
   const connection = useConnectionState();
+  const { encryptedTransport } = useCapabilities();
+  // Reported from the shell rather than from a screen: the fact worth reporting is true
+  // whether or not anybody opens settings.
+  useCapabilityReport();
 
   const isPairing = route.path === '/pair';
 
@@ -49,6 +57,16 @@ export function App({ decode }: AppProps) {
 
   return (
     <div className={styles.app}>
+      {/*
+        Shown on every screen, including the pairing one, and shown before anything else.
+        Somebody typed an `http://` address to get here and the consequence — everyone else on
+        the Wi-Fi can read this — is not a footnote on a settings screen.
+      */}
+      {encryptedTransport ? null : (
+        <p className={styles.insecureStrip} role="status" data-testid="insecure-strip">
+          {at('capabilities.unencrypted')}
+        </p>
+      )}
       <div className={styles.route}>{renderRoute(route.segments, route.query, decode)}</div>
       {showTabBar ? <TabBar path={route.path} connection={connection} /> : null}
     </div>

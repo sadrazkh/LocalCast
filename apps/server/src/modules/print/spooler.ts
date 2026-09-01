@@ -94,6 +94,97 @@ export const PRINT_TO_SCRIPT =
   "-ArgumentList ('\"' + $env:LC_PRINTER + '\"') -WindowStyle Hidden -ErrorAction Stop";
 
 /**
+ * Whether the shell has a `PrintTo` handler for one extension, asked of the registry.
+ *
+ * The comment above says images work and PDFs may not. That is true of a stock Windows and
+ * false of most real machines, in both directions: Acrobat adds `printto` for `.pdf`, and
+ * `.bmp` — which LocalCast accepts as a printable image — has **no** `printto` at all,
+ * because its ProgId is `Paint.Picture` and Paint never registered the verb. Measured on the
+ * reference machine: `.png`/`.jpg`/`.gif`/`.tif` resolve to `pngfile`/`jpegfile`/`giffile`/
+ * `TIFImage.Document`, all of which have it; `.bmp` and `.webp` have none.
+ *
+ * So the limit is read rather than assumed. `Start-Process -Verb PrintTo` on a type with no
+ * handler throws *after* the job has been accepted and the spool copy made, with a message
+ * about "no app associated with it" that names neither the type nor the fix.
+ */
+export interface PrintToSupport {
+  ext: string;
+  /** True only when a `printto` verb was actually found. */
+  registered: boolean;
+  /** The ProgId that carries the verb, for the log. */
+  progId: string | null;
+  /**
+   * False when the registry could not be read at all. An unanswerable question must not
+   * become a refusal: the job is attempted and `Start-Process` gets to fail on its own.
+   */
+  known: boolean;
+}
+
+/** Only ever built from a validated extension, and passed in the environment even so. */
+export const PRINT_TO_PROBE_SCRIPT = [
+  '$ext=$env:LC_EXT;$ids=@();',
+  "$uc=(Get-ItemProperty -LiteralPath ('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\'+$ext+'\\UserChoice') -Name ProgId -ErrorAction SilentlyContinue).ProgId;",
+  'if($uc){$ids+=$uc};',
+  "$assoc=(Get-ItemProperty -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\'+$ext) -Name '(default)' -ErrorAction SilentlyContinue).'(default)';",
+  'if($assoc){$ids+=$assoc};$hit=$null;',
+  "foreach($id in $ids){ if(-not $hit -and (Test-Path -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\'+$id+'\\shell\\printto'))){$hit=$id} };",
+  "if(-not $hit -and (Test-Path -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\SystemFileAssociations\\'+$ext+'\\shell\\printto'))){$hit='SystemFileAssociations'+$ext};",
+  '[pscustomobject]@{ProgId=[string]$hit;PrintTo=[bool]$hit}|ConvertTo-Json -Compress',
+].join('');
+
+/**
+ * An extension is a registry path component here, so it is checked against a shape rather
+ * than trusted. `..` or a backslash in a file name would otherwise walk to a different key —
+ * a weaker hazard than the printer-name injection this module guards elsewhere, but the same
+ * class of mistake, and the check costs nothing.
+ */
+const SAFE_EXTENSION = /^\.[a-z0-9]{1,16}$/;
+
+export async function probePrintTo(exec: ExecFileFn, rawExt: string): Promise<PrintToSupport> {
+  const ext = rawExt.toLowerCase();
+  if (!SAFE_EXTENSION.test(ext)) {
+    return { ext, registered: false, progId: null, known: true };
+  }
+  try {
+    const { stdout } = await exec(POWERSHELL, powershellArgs(PRINT_TO_PROBE_SCRIPT), {
+      timeoutMs: 15_000,
+      env: { ...process.env, LC_EXT: ext },
+    });
+    const [row] = parsePowerShellJson<Record<string, unknown>>(stdout);
+    if (!row || typeof row !== 'object') return { ext, registered: false, progId: null, known: true };
+    const progId = typeof row['ProgId'] === 'string' && row['ProgId'] !== '' ? row['ProgId'] : null;
+    return { ext, registered: row['PrintTo'] === true, progId, known: true };
+  } catch {
+    return { ext, registered: false, progId: null, known: false };
+  }
+}
+
+/**
+ * Refuses a type the shell cannot print, before anything is handed to Windows.
+ *
+ * PDFs and images fail for different reasons and have different fixes, so they get different
+ * sentences. Both name the helper, because installing it is what makes either work.
+ */
+export function assertFallbackCanPrintType(support: PrintToSupport, vendorDir: string): void {
+  if (!support.known || support.registered) return;
+
+  const helper = `the print helper (${SUMATRA_BINARY} in ${vendorDir})`;
+  const why =
+    support.ext === '.pdf'
+      ? `No PDF reader on this machine registers a Windows print handler for ${support.ext}. ` +
+        'Edge, the default PDF viewer on a clean Windows, can open a PDF but not print one ' +
+        'from the shell.'
+      : `Windows has no application registered to print ${support.ext || 'this type'} files. ` +
+        'Its file type has no PrintTo handler, which is the case for .bmp and .webp on a ' +
+        'stock install.';
+
+  throw new ApiException(
+    ErrorCode.SPOOLER_FAILED,
+    `${why} Install ${helper}, or convert the file to PDF first. Nothing was sent to the printer.`,
+  );
+}
+
+/**
  * What the fallback cannot do.
  *
  * `PrintTo` hands the file to whichever application owns the type and gives no way to ask for

@@ -16,7 +16,13 @@ import { electronBindingPath, installedElectronVersion, nativeStatus } from './r
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const checks = [];
 
-/** state: 'ok' | 'blocking' | 'degrading'. `fix` is a command or a document to read. */
+/**
+ * state: 'ok' | 'blocking' | 'degrading' | 'limited'. `fix` is a command or a document to read.
+ *
+ * `limited` is `degrading` with a different word in front of it: the feature works, but not
+ * completely. "absent  image printing" would be a lie on a machine where six of the eight
+ * image types print perfectly well.
+ */
 function report(state, name, detail, fix) {
   checks.push({ state, name, detail, fix });
 }
@@ -105,8 +111,15 @@ report(
 );
 
 // ── Printing ────────────────────────────────────────────────────────────────────────────
-// Degrading by design: everything except printing works without it, and the app says so
-// rather than pretending a job was queued.
+// Degrading by design: everything except printing works without the helper, and the app says
+// so rather than pretending a job was queued.
+//
+// "printing may not work" is not worth printing. What a user can act on is *which* things
+// print and *why* the rest do not, because the two reasons have two different fixes: the
+// helper is missing, or Windows has no application registered to print that type. So this
+// section asks the registry the same question `modules/print/spooler.ts` asks per job.
+const INSTALL_HELPER = 'node scripts/install-print-helper.mjs';
+
 const sumatra = ['SumatraPDF.exe', 'SumatraPDF-portable.exe', 'sumatrapdf.exe'].some((name) =>
   existsSync(join(ROOT, 'vendor', 'bin', name)),
 );
@@ -115,8 +128,8 @@ report(
   'print helper',
   sumatra
     ? 'vendor/bin/SumatraPDF.exe'
-    : 'vendor/bin/SumatraPDF.exe is missing — printing will fail',
-  'See vendor/README.md, then: node scripts/verify-vendor.mjs --record',
+    : 'vendor/bin/SumatraPDF.exe is missing — see the two lines below for what still prints',
+  `${INSTALL_HELPER}   (it stages and shows you the digest; it installs nothing on its own)`,
 );
 
 if (sumatra && !existsSync(join(ROOT, 'vendor', 'checksums.json'))) {
@@ -128,8 +141,103 @@ if (sumatra && !existsSync(join(ROOT, 'vendor', 'checksums.json'))) {
   );
 }
 
+/**
+ * Which extensions the shell has a `PrintTo` verb for.
+ *
+ * The counterpart of `PRINT_TO_PROBE_SCRIPT` in `apps/server/src/modules/print/spooler.ts`,
+ * asked once for every type instead of once per job. That module is the authority — it is
+ * what actually refuses a job — and this is the preflight; if you change one, change both.
+ * Returns null when the question could not be asked at all, which is not the same answer as
+ * "no handler".
+ */
+function printToHandlers(extensions) {
+  if (process.platform !== 'win32') return null;
+  const script = [
+    '$out=@();',
+    "foreach($ext in ($env:LC_EXTS -split ',')){",
+    '$ids=@();',
+    "$uc=(Get-ItemProperty -LiteralPath ('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\'+$ext+'\\UserChoice') -Name ProgId -ErrorAction SilentlyContinue).ProgId;",
+    'if($uc){$ids+=$uc};',
+    "$assoc=(Get-ItemProperty -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\'+$ext) -Name '(default)' -ErrorAction SilentlyContinue).'(default)';",
+    'if($assoc){$ids+=$assoc};$hit=$null;',
+    "foreach($id in $ids){ if(-not $hit -and (Test-Path -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\'+$id+'\\shell\\printto'))){$hit=$id} };",
+    "if(-not $hit -and (Test-Path -LiteralPath ('Registry::HKEY_CLASSES_ROOT\\SystemFileAssociations\\'+$ext+'\\shell\\printto'))){$hit='SystemFileAssociations'+$ext};",
+    '$out+=[pscustomobject]@{Ext=$ext;ProgId=[string]$hit;PrintTo=[bool]$hit}};',
+    '$out|ConvertTo-Json -Compress',
+  ].join('');
+
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      // The extension list travels in the environment, never spliced into the script.
+      env: { ...process.env, LC_EXTS: extensions.join(',') },
+    },
+  );
+  if (result.status !== 0) return null;
+  try {
+    const parsed = JSON.parse((result.stdout || '').trim() || 'null');
+    if (parsed === null) return null;
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return new Map(rows.map((row) => [row.Ext, { printTo: row.PrintTo === true, progId: row.ProgId || null }]));
+  } catch {
+    return null;
+  }
+}
+
+// The image types `assertPrintable` accepts, minus PDF.
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp'];
+const handlers = printToHandlers(['.pdf', ...IMAGE_EXTENSIONS]);
+
+if (process.platform !== 'win32') {
+  report('ok', 'print preflight', `skipped: printing is Windows-only and this is ${process.platform}`);
+} else if (handlers === null) {
+  report(
+    'degrading',
+    'print preflight',
+    'the registry could not be read, so which types will print is unknown',
+    'Run this from a normal PowerShell-capable shell; printing itself may still work',
+  );
+} else if (sumatra) {
+  // With the helper there is nothing to work out: it renders and prints every type LocalCast
+  // accepts, and it is the only path that can carry copies, duplex and a page range.
+  report('ok', 'image printing', 'through the bundled helper — all accepted image types');
+  report('ok', 'PDF printing', 'through the bundled helper, including copies, duplex and page ranges');
+} else {
+  const can = IMAGE_EXTENSIONS.filter((ext) => handlers.get(ext)?.printTo);
+  const cannot = IMAGE_EXTENSIONS.filter((ext) => !handlers.get(ext)?.printTo);
+  // Degrading, never blocking: LocalCast is a file server that also prints, and refusing to
+  // start over a missing print path would be the wrong trade — the app already tells the user
+  // per job. `npm run doctor` runs in CI, where a runner has no image handlers at all.
+  report(
+    can.length > 0 ? 'limited' : 'degrading',
+    'image printing',
+    can.length === 0
+      ? 'no image type has a Windows PrintTo handler on this machine — no image will print'
+      : `${can.join(' ')} print through Windows itself` +
+        (cannot.length ? `; ${cannot.join(' ')} will be refused — no PrintTo handler` : ''),
+    `${INSTALL_HELPER}   (the helper prints every type, and is the only way to ask for copies, duplex or a page range)`,
+  );
+
+  const pdf = handlers.get('.pdf');
+  report(
+    pdf?.printTo ? 'limited' : 'degrading',
+    'PDF printing',
+    pdf?.printTo
+      ? `through ${pdf.progId}, which registered a Windows PrintTo handler — one copy, ` +
+        'single-sided, whole document only'
+      : 'PDFs will NOT print. No reader on this machine registers a PrintTo handler, which is ' +
+        'the case on a clean Windows: Edge can open a PDF but not print one from the shell',
+    pdf?.printTo
+      ? `${INSTALL_HELPER}   (needed for copies, duplex or a page range)`
+      : `${INSTALL_HELPER}   (PDF printing needs a reader; this installs the bundled one)`,
+  );
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────────────────
-const label = { ok: 'ok      ', blocking: 'MISSING ', degrading: 'absent  ' };
+const label = { ok: 'ok      ', blocking: 'MISSING ', degrading: 'absent  ', limited: 'limited ' };
 console.log('\nLocalCast prerequisites\n');
 for (const check of checks) {
   console.log(`  ${label[check.state]}${check.name.padEnd(16)}${check.detail}`);
@@ -137,7 +245,7 @@ for (const check of checks) {
 }
 
 const blocking = checks.filter((c) => c.state === 'blocking').length;
-const degrading = checks.filter((c) => c.state === 'degrading').length;
+const degrading = checks.filter((c) => c.state === 'degrading' || c.state === 'limited').length;
 console.log(
   `\n${blocking} blocking, ${degrading} degrading. ` +
     'What each of these is and why LocalCast needs it: docs/prerequisites.md\n',

@@ -19,6 +19,14 @@ declare module 'express-serve-static-core' {
      * A client cannot forge it: it is a property on the request object, not a header.
      */
     viaLan?: boolean;
+    /**
+     * Set by the opt-in **unencrypted** local-network listener, in addition to `viaLan`.
+     *
+     * Anything that wants to know whether this particular request crossed the Wi-Fi in the
+     * clear reads this rather than guessing from a header or from `req.secure`, both of which
+     * describe a proxy's opinion instead of our own socket.
+     */
+    viaPlaintext?: boolean;
   }
 }
 
@@ -116,10 +124,19 @@ export function isLoopbackAddress(address: string | undefined): boolean {
  *
  * Mounted alongside the edge-secret guard, never instead of it: loopback alone would admit
  * any other process on the machine.
+ *
+ * The address is necessary but not sufficient, because the local-network listeners bind
+ * `0.0.0.0` and that includes `127.0.0.1`. A process on this machine — or any web page in any
+ * browser on it, which needs no permission to *send* a cross-origin POST — could otherwise
+ * reach `https://127.0.0.1:<lanPort>/operator/folders`, where the edge secret is waived
+ * because the request arrived on the LAN listener and the loopback test passes because the
+ * address really is loopback. Two guards, each correct on its own, adding up to no guard at
+ * all. So the operator API refuses anything that came in on a listener facing the network,
+ * whatever address it appears to come from.
  */
 export function loopbackOnly(): RequestHandler {
   return (req, _res, next) => {
-    if (!isLoopbackAddress(req.socket.remoteAddress)) {
+    if (req.viaLan === true || !isLoopbackAddress(req.socket.remoteAddress)) {
       next(new ApiException(ErrorCode.NOT_FOUND, 'Not found'));
       return;
     }

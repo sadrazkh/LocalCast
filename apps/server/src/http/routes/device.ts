@@ -21,6 +21,11 @@ import type { SqlPermissionService } from '../../library/permissions.js';
 import type { ServerContext } from '../../kernel.js';
 import { serveFile } from '../range.js';
 import { wrap } from '../errors.js';
+import {
+  deviceCapabilityReportSchema,
+  observedListener,
+  type CapabilityReports,
+} from '../capabilities.js';
 
 /**
  * The device API from spec 4.1, minus printing, uploads and WebDAV, which live in
@@ -39,6 +44,8 @@ export interface DeviceRouterDeps {
   limiter: RateLimiter;
   files: FsFileResolver;
   permissions: SqlPermissionService;
+  /** Where a device's own account of what its browser granted it is kept. */
+  capabilities: CapabilityReports;
 }
 
 const pairStatusQuerySchema = z.object({ ticket: z.string().min(1) });
@@ -71,7 +78,7 @@ interface FileRow {
 
 export function createDeviceRouter(deps: DeviceRouterDeps): Router {
   const router = Router();
-  const { ctx, config, tokens, pairing, limiter, files, permissions } = deps;
+  const { ctx, config, tokens, pairing, limiter, files, permissions, capabilities } = deps;
   const { db } = ctx;
 
   // ── pairing (unauthenticated, but behind the edge secret) ──────────────────
@@ -144,6 +151,52 @@ export function createDeviceRouter(deps: DeviceRouterDeps): Router {
         },
         permissions: permissionsFor(device.id),
       });
+    }),
+  );
+
+  /**
+   * The device says what its browser actually granted it.
+   *
+   * Authenticated, because an unauthenticated version would let anyone on the Wi-Fi write
+   * whatever they liked into the operator's panel. Idempotent: a device posts this on every
+   * launch and the newest answer replaces the previous one.
+   *
+   * The response is `204`, not the stored record. A device gains nothing from reading its own
+   * report back, and returning it would invite a client to treat this endpoint as storage.
+   */
+  router.post(
+    '/capabilities',
+    wrap((req, res) => {
+      const { device } = authed(req);
+      const report = deviceCapabilityReportSchema.parse(req.body);
+      const { changed, stored } = capabilities.record(
+        device.id,
+        report,
+        observedListener(req),
+      );
+
+      // One entry per real change, not one per launch: an activity feed that repeats the same
+      // line every time a phone unlocks is a feed nobody reads.
+      if (changed) {
+        ctx.activity.record('device.capabilities', device.id, {
+          serviceWorker: stored.serviceWorker,
+          camera: stored.camera,
+          secureContext: stored.secureContext,
+          listener: stored.listener,
+        });
+        ctx.log.info('device reported its capabilities', {
+          deviceId: device.id,
+          serviceWorker: stored.serviceWorker,
+          ...(stored.serviceWorkerError === undefined
+            ? {}
+            : { serviceWorkerError: stored.serviceWorkerError }),
+          camera: stored.camera,
+          secureContext: stored.secureContext,
+          listener: stored.listener,
+        });
+      }
+
+      res.status(204).end();
     }),
   );
 

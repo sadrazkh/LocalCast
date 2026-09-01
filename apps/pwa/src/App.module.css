@@ -11,6 +11,27 @@
   min-block-size: 0;
 }
 
+/*
+  The unencrypted-address strip.
+
+  Not dismissible, and not styled as a toast. A toast is something you make go away; this is a
+  standing statement about what the connection is, and it should stop being on screen only when
+  it stops being true. It uses the warning colour rather than the danger one because the state
+  is a deliberate choice somebody made, not a fault.
+*/
+.insecureStrip {
+  flex: 0 0 auto;
+  padding: var(--lc-space-2) var(--lc-space-4);
+  background: var(--lc-warning);
+  color: #1a1400;
+  font-size: var(--lc-fs-2xs);
+  line-height: var(--lc-lh-normal);
+  font-weight: var(--lc-fw-medium);
+  text-align: center;
+  /* The strip must never eat a row of the library on a small phone. */
+  padding-block-start: max(var(--lc-space-2), env(safe-area-inset-top));
+}
+
 .splash {
   display: flex;
   align-items: center;

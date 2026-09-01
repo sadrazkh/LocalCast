@@ -18,7 +18,7 @@ npm start       # builds everything and launches the desktop app
 | 1 | Node 22+ and npm | nothing builds |
 | 2 | `better-sqlite3` rebuilt for Electron | the app starts and dies at its first database call |
 | 3 | Go 1.23+ → `netedge.exe` | **no access from outside the local network at all** |
-| 4 | `SumatraPDF.exe` in `vendor/bin` | everything works except printing |
+| 4 | `SumatraPDF.exe` in `vendor/bin` | most images still print; PDFs print only if a reader is installed; copies, duplex and page ranges are refused |
 
 Only 3 needs anything installed that most people do not already have, and it is the one that
 matters most.
@@ -159,30 +159,60 @@ remote printing work regardless of what PDF reader the user happens to have. It 
 committed to this repository on purpose: a checked-in third-party executable is a licence and
 review problem, and one downloaded automatically during a build is a supply-chain problem.
 
-Nothing else depends on it. Without it browsing, streaming, WebDAV and uploads all work
-normally, and a print job fails with a message saying the print helper is missing rather than
-pretending it was queued.
+**What still prints without it — and what does not.** LocalCast falls back to the Windows
+shell's `PrintTo` verb, which needs no bundled binary but can only hand a file to whichever
+application owns its type. Measured on a real machine, not assumed:
+
+| Without the helper | Result |
+|---|---|
+| `.png` `.jpg` `.jpeg` `.gif` `.tif` `.tiff` | print — Windows registers `printto` for these itself |
+| `.bmp` `.webp` | **refused.** `.bmp` belongs to `Paint.Picture`, which never registered the verb, and `.webp` has no handler at all |
+| `.pdf` with Acrobat, SumatraPDF or another reader installed | prints |
+| `.pdf` on a clean Windows | **refused.** Edge is the default PDF handler and its ProgId `MSEdgePDF` exposes only `open` — it can show you a PDF but not print one from the shell |
+| any job asking for copies, duplex or a page range | **refused**, whatever the type. `PrintTo` cannot express them, and printing one copy when two were asked for is worse than failing |
+
+Every one of those refusals happens *before* anything is sent to the printer, and says which
+of the two reasons applies. Nothing else depends on the helper: browsing, streaming, WebDAV
+and uploads all work normally.
 
 **How to tell.**
 
 ```bash
-ls vendor/bin/SumatraPDF.exe
-node scripts/verify-vendor.mjs
+npm run doctor                  # says which types print here, and why the rest do not
+node scripts/verify-vendor.mjs  # checks the installed binary against the recorded digest
 ```
 
-**How to get it.** Download the **portable 64-bit** build from the official site,
-<https://www.sumatrapdfreader.org/download-free-pdf-viewer>, and put it at
-`vendor/bin/SumatraPDF.exe`. Then record its digest, once:
+`npm run doctor` reports `image printing` and `PDF printing` separately, because they fail for
+different reasons and have different fixes.
+
+**How to get it.**
 
 ```bash
-node scripts/verify-vendor.mjs --record
+node scripts/install-print-helper.mjs
 ```
 
-That writes the SHA-256 of the file you actually downloaded into `vendor/checksums.json`, so
-later runs and CI can prove the binary has not changed underneath you. Check that digest
-against the checksum SumatraPDF publishes with the release **before** you record it —
-`--record` trusts whatever file is in front of it, and a checksum that was not compared
-against the publisher's proves nothing. `vendor/README.md` covers the licence terms.
+That downloads the portable 64-bit build from
+<https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64.zip>, unpacks it into
+`vendor/.staging`, and prints the SHA-256 it computed, the size, and what Windows'
+Authenticode check says about who signed it. Then it **stops**. Nothing reaches `vendor/bin`
+until you run it again with the digest it showed you:
+
+```bash
+node scripts/install-print-helper.mjs --confirm=<the sha256 it printed>
+```
+
+**SumatraPDF publishes no checksum file.** There is no `SHA256SUMS` to compare against, which
+is exactly why this is two steps instead of an automatic download: open
+<https://www.sumatrapdfreader.org/download-free-pdf-viewer>, check that this is the release
+you meant, and treat the Authenticode signature as the publisher-side evidence — the script
+refuses to install anything Windows does not call `Valid` unless you pass `--allow-unsigned`.
+
+On success it records the digest in `vendor/checksums.json`, so every later run — here, on
+another machine, in CI — **verifies instead of trusting**. It will refuse to install a binary
+whose digest does not match one already recorded. If you were given a digest out of band,
+pass it as `--expect=<sha256>` and the script will abort before installing rather than after.
+
+`vendor/README.md` covers the licence terms.
 
 ---
 
@@ -195,6 +225,8 @@ against the publisher's proves nothing. `vendor/README.md` covers the licence te
 | `npm start` | rebuild check → full build → launch the desktop app |
 | `npm run dev` | Vite for the Electron renderer (`:5174`) and the PWA (`:5173`), plus Electron pointed at the first |
 | `npm run rebuild:native` | just the native-module rebuild |
+| `node scripts/install-print-helper.mjs` | fetches SumatraPDF and shows you its digest; installs nothing without `--confirm` |
+| `node scripts/verify-vendor.mjs` | checks the vendored binaries against `vendor/checksums.json` |
 | `npm run netedge:build` | builds the Go sidecar (needs Go) |
 | `npm run build` / `npm test` | the whole workspace |
 

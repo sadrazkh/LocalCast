@@ -174,14 +174,25 @@ describe('sharing over the local network', () => {
     expect(res.status).toBe(401);
   });
 
-  it('keeps the operator API off the local-network listener', async () => {
-    const lan = lanIpv4Addresses()[0];
-    // Reaching the listener over a *real* network address is the only way to prove this: on
-    // 127.0.0.1 the loopback guard would let the request through no matter which socket it
-    // arrived on. A machine with no LAN address cannot answer the question at all.
-    if (lan === undefined) return;
-
+  it('keeps the operator API off the local-network listener, loopback address included', async () => {
     const ts = await lanServer();
+
+    /**
+     * The address alone is not the guard.
+     *
+     * This listener binds `0.0.0.0`, which includes `127.0.0.1`, so a caller that connects to
+     * it over loopback presents a loopback `remoteAddress` *and* gets the edge secret waived
+     * because the request arrived on the LAN listener. Two guards, each correct on its own,
+     * adding up to none — and reachable by any web page in any browser on this machine, since
+     * sending a cross-origin POST needs nobody's permission. So the operator API refuses
+     * anything that came in on a network-facing listener, whatever address it claims.
+     */
+    const viaLoopback = await tlsRequest(lanPortOf(ts), '/operator/folders');
+    expect(viaLoopback.status).toBe(404);
+
+    const lan = lanIpv4Addresses()[0];
+    // The rest of this needs a real network address; a machine with none cannot answer it.
+    if (lan === undefined) return;
     // Over TLS, from the network, carrying the edge secret — the strongest a caller on the
     // Wi-Fi could ever be — and it still must not answer. The operator API is the surface
     // that grants access, so opening the LAN listener must not open it too.

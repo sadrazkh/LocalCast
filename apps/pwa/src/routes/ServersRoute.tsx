@@ -17,10 +17,12 @@ import {
 } from '@localcast/ui-kit';
 import type { MessageKey } from '@localcast/ui-kit';
 import type { EdgeState } from '@localcast/contract';
+import type { CameraState, ServiceWorkerState } from '../capabilities/detect.js';
+import { useCapabilities } from '../capabilities/store.js';
 import { useClient, useClientContext, useConnectionState } from '../client/ClientProvider.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useServerEvent } from '../hooks/useServerEvent.js';
-import { useAppT } from '../i18n/messages.js';
+import { useAppT, type AppMessageKey } from '../i18n/messages.js';
 import { buildHref, navigate } from '../router.js';
 import { Screen, toDotState } from '../components/Screen.js';
 import styles from './ServersRoute.module.css';
@@ -33,6 +35,29 @@ const EDGE_LABEL: Record<EdgeState, MessageKey> = {
   'obtaining-certificate': 'edge.obtaining-certificate',
   connected: 'edge.connected',
   error: 'edge.error',
+};
+
+/**
+ * One label per outcome, so the screen can never say "unavailable" without saying why.
+ *
+ * `refused` is the one this whole mechanism exists for: the browser loaded the page over an
+ * origin whose certificate it was asked to accept, and then declined to register a worker on
+ * it anyway. Naming that precisely is the difference between a user thinking the app is broken
+ * and a user knowing their browser made a decision.
+ */
+const SERVICE_WORKER_LABEL: Record<ServiceWorkerState, AppMessageKey> = {
+  registered: 'capabilities.swRegistered',
+  refused: 'capabilities.swRefused',
+  'insecure-context': 'capabilities.swInsecure',
+  unsupported: 'capabilities.swUnsupported',
+  failed: 'capabilities.swFailed',
+  pending: 'capabilities.swPending',
+};
+
+const CAMERA_LABEL: Record<CameraState, AppMessageKey> = {
+  available: 'capabilities.cameraAvailable',
+  'insecure-context': 'capabilities.cameraInsecure',
+  unsupported: 'capabilities.cameraUnsupported',
 };
 
 export interface ServersRouteProps {
@@ -106,6 +131,8 @@ function ServerList() {
           )}
         </Panel>
 
+        <ConnectionPanel />
+
         <a className={styles.linkRow} href={buildHref('/servers/network')}>
           <span>{at('servers.advanced')}</span>
           <ChevronEndIcon size={16} />
@@ -161,6 +188,68 @@ function ServerList() {
         <p className={styles.remoteBody}>{at('servers.unpairConfirm')}</p>
       </Modal>
     </Screen>
+  );
+}
+
+/**
+ * What this browser actually granted this origin.
+ *
+ * Findings, not settings: nothing here is a control, because none of it is the phone's to
+ * decide. It exists because the two features that depend on those grants — the offline library
+ * and QR scanning — used to fail silently, and a silent failure on a phone reads as a broken
+ * app rather than as a browser policy. The same facts go to the Windows panel, so the operator
+ * does not have to be handed the phone to find out.
+ */
+function ConnectionPanel() {
+  const t = useT();
+  const at = useAppT();
+  const { capabilities, encryptedTransport } = useCapabilities();
+
+  return (
+    <Panel title={at('capabilities.title')}>
+      <div className={styles.rows}>
+        <div className={styles.row}>
+          <span className={styles.label}>{at('capabilities.encryptionLabel')}</span>
+          <span className={styles.value} data-testid="capability-encryption">
+            {encryptedTransport
+              ? at('capabilities.encryptionOn')
+              : at('capabilities.encryptionOff')}
+          </span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.label}>{at('capabilities.offlineLibrary')}</span>
+          <span
+            className={`${styles.value} ${styles.valueWrap}`}
+            data-testid="capability-offline"
+          >
+            {at(SERVICE_WORKER_LABEL[capabilities.serviceWorker])}
+          </span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.label}>{at('capabilities.camera')}</span>
+          <span className={`${styles.value} ${styles.valueWrap}`} data-testid="capability-camera">
+            {at(CAMERA_LABEL[capabilities.camera])}
+          </span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.label}>{at('capabilities.installed')}</span>
+          <span className={styles.value}>
+            {capabilities.standalone ? t('common.yes') : t('common.no')}
+          </span>
+        </div>
+      </div>
+
+      {capabilities.storage === 'memory' ? (
+        <p className={`${styles.notice} ${styles.warning}`}>{at('capabilities.storageMemory')}</p>
+      ) : null}
+      {encryptedTransport ? null : (
+        // The cost, stated where the consequence is visible rather than only where the choice
+        // was made — the person holding the phone is rarely the person who turned this on.
+        <p className={`${styles.notice} ${styles.warning}`} data-testid="capability-cost">
+          {at('capabilities.unencryptedCost')}
+        </p>
+      )}
+    </Panel>
   );
 }
 

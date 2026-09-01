@@ -32,6 +32,20 @@
   white-space: nowrap;
 }
 
+/*
+  A value that is a sentence rather than a name.
+
+  `.value` truncates with an ellipsis, which is right for an address and wrong for "the browser
+  refused: it does not accept this computer's certificate" — the half of that sentence which
+  would survive is the half that explains nothing.
+*/
+.valueWrap {
+  white-space: normal;
+  overflow: visible;
+  text-align: end;
+  line-height: var(--lc-lh-normal);
+}
+
 /* Addresses, versions and codes stay ASCII and LTR even inside an RTL paragraph. */
 .mono {
   font-family: var(--lc-font-mono);

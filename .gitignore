@@ -20,6 +20,8 @@ native/netedge/*.syso
 
 # Vendored third-party binaries fetched at build time
 vendor/bin/
+# Where scripts/install-print-helper.mjs downloads and unpacks before you confirm it
+vendor/.staging/
 
 # Editor / OS
 .vscode/

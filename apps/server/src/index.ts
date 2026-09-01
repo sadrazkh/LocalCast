@@ -13,6 +13,7 @@ import { TokenService } from './auth/tokens.js';
 import { loadConfig, type ServerConfig, type ServerConfigOverrides } from './config.js';
 import { openDatabase, ownerUserId } from './db/index.js';
 import { InMemoryEventBus } from './events/bus.js';
+import { CapabilityReports } from './http/capabilities.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { createDeviceRouter } from './http/routes/device.js';
 import { createEventsRouter } from './http/routes/events.js';
@@ -23,6 +24,8 @@ import { Indexer } from './library/indexer.js';
 import { SqlPermissionService } from './library/permissions.js';
 import { FsFileResolver } from './library/resolver.js';
 import { createLogger } from './logger.js';
+import { buildLanAccess, type LanAccess } from './net/lanAccess.js';
+import { createPlaintextListener } from './net/plaintext.js';
 import { ensureLanCertificate, type LanCertificate } from './net/selfSigned.js';
 
 export const OPERATOR_PREFIX = '/operator';
@@ -47,6 +50,17 @@ export interface LocalCastServer {
   address(): AddressInfo | null;
   /** The local-network HTTPS listener's address, or null when LAN sharing is off. */
   lanAddress(): AddressInfo | null;
+  /**
+   * The **unencrypted** local-network listener's address, or null — which is the normal case.
+   * Non-null only when the operator deliberately turned it on.
+   */
+  lanPlaintextAddress(): AddressInfo | null;
+  /**
+   * Every address this machine answers on for the local network, encrypted and not, for the
+   * panel to render. The plaintext ones appear here and nowhere else: they are never put in a
+   * QR code, so the only way a device reaches them is for a person to read one off the panel.
+   */
+  lanAccess(): LanAccess;
   /**
    * Where a device on the same Wi-Fi should connect, and the fingerprint of the certificate
    * it will be shown. Null when LAN sharing is off, or when the machine has no address on it.
@@ -100,6 +114,14 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   });
   const limiter = new RateLimiter(rateLimits ?? {});
   const indexer = new Indexer({ db, log, events });
+  /**
+   * What each device's browser says it was actually granted.
+   *
+   * In memory on purpose — see `http/capabilities.ts`. Constructed here so the device route
+   * that writes it and the operator route that reads it are looking at one object rather than
+   * at two that agree by coincidence.
+   */
+  const capabilities = new CapabilityReports();
 
   /**
    * The certificate for the local network, issued (or reloaded) before anything binds.
@@ -143,7 +165,10 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   // device token is the credential that matters.
   app.use(edgeSecretGuard(config.edgeSecret, { lanAllowed: config.lan }));
 
-  app.use(OPERATOR_PREFIX, createOperatorRouter({ ctx, tokens, pairing, indexer, activity }));
+  app.use(
+    OPERATOR_PREFIX,
+    createOperatorRouter({ ctx, tokens, pairing, indexer, activity, capabilities }),
+  );
 
   const eventsRouter = createEventsRouter({
     bus: events,
@@ -155,7 +180,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
 
   app.use(
     API_PREFIX,
-    createDeviceRouter({ ctx, config, tokens, pairing, limiter, files, permissions }),
+    createDeviceRouter({ ctx, config, tokens, pairing, limiter, files, permissions, capabilities }),
   );
 
   /**
@@ -182,7 +207,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   app.use(errorHandler(log));
 
   /**
-   * Two listeners, one Express app.
+   * Two listeners, one Express app — three when the unencrypted fallback is switched on.
    *
    * Loopback stays plain HTTP because `netedge` is the only thing that talks to it: the
    * sidecar terminates TLS on the tailnet and reverse-proxies here, so a second TLS hop
@@ -206,8 +231,20 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
           app(req, res);
         });
 
+  /**
+   * The unencrypted fallback, for devices whose browser will not use the encrypted listener at
+   * all. Off unless somebody turned it on; see `net/plaintext.ts` for why it exists and why it
+   * is not — and cannot be — a repair for the offline library.
+   *
+   * Requires `lan` as well: an unencrypted door onto a network we are not otherwise sharing on
+   * would be a way to *start* sharing without ever choosing to.
+   */
+  const plaintextServer =
+    config.lan && config.lanPlaintext ? createPlaintextListener({ handler: app, log }) : null;
+
   let listening = false;
   let lanListening = false;
+  let plaintextListening = false;
 
   if (config.indexOnStart) {
     // Deliberately not awaited: a 200k-file library must not delay the first request.
@@ -253,6 +290,18 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
         }
       }
 
+      if (plaintextServer !== null) {
+        const plainAddr = await bind(plaintextServer, config.lanPlaintextPort, '0.0.0.0');
+        plaintextListening = true;
+        // A warning, not an info line. This listener is a deliberate exception to "every
+        // connection is encrypted", and a log that states it plainly is part of the price.
+        log.warn('local network ALSO listening unencrypted (http)', {
+          host: plainAddr.address,
+          port: plainAddr.port,
+          note: 'devices on this address get no offline library and no camera; http is never a secure context',
+        });
+      }
+
       return addr;
     },
 
@@ -264,6 +313,19 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     lanAddress(): AddressInfo | null {
       const addr = lanServer?.address();
       return addr && typeof addr === 'object' ? addr : null;
+    },
+
+    lanPlaintextAddress(): AddressInfo | null {
+      const addr = plaintextServer?.address();
+      return addr && typeof addr === 'object' ? addr : null;
+    },
+
+    lanAccess(): LanAccess {
+      return buildLanAccess({
+        certificate: lanCert,
+        tlsPort: portOf(lanServer),
+        plaintextPort: portOf(plaintextServer),
+      });
     },
 
     lanEndpoint(): LanEndpoint | null {
@@ -287,6 +349,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
       // client noticed; every one of them has already been told to end.
       if (listening) await shutdown(server);
       if (lanListening && lanServer !== null) await shutdown(lanServer);
+      if (plaintextListening && plaintextServer !== null) await shutdown(plaintextServer);
       events.dispose();
       db.close();
     },
@@ -306,6 +369,12 @@ function bind(
       resolve(server.address() as AddressInfo);
     });
   });
+}
+
+/** The bound port, or null when the server does not exist or was never bound. */
+function portOf(server: http.Server | https.Server | null): number | null {
+  const addr = server?.address();
+  return addr !== null && addr !== undefined && typeof addr === 'object' ? addr.port : null;
 }
 
 function shutdown(server: http.Server | https.Server): Promise<void> {
@@ -436,3 +505,12 @@ export {
   lanIpv4Addresses,
 } from './net/selfSigned.js';
 export type { LanCertificate } from './net/selfSigned.js';
+export { buildLanAccess } from './net/lanAccess.js';
+export type { LanAccess, LanAddress } from './net/lanAccess.js';
+export { CapabilityReports, deviceCapabilityReportSchema } from './http/capabilities.js';
+export type {
+  DeviceCapabilityReport,
+  ObservedListener,
+  ServiceWorkerState,
+  StoredCapabilityReport,
+} from './http/capabilities.js';

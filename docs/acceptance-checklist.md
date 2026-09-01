@@ -352,13 +352,20 @@ permission hides exactly the bug this item looks for.
 
 ### ☐ E2 — What a browser grants an origin whose certificate you accepted
 
-**Why nothing here can prove this.** On the local network the certificate is self-signed by
-design (§2.5 of the design spec): the first connection shows a warning and the user accepts
-it. The origin is then `https://`, which is a secure context — but browsers differ on what
-they grant an origin that carries an *outstanding certificate error*. Chrome is documented to
-refuse service-worker registration in that state; Safari on iOS has not been checked. This is
-the difference between LAN mode having the offline library and not having it, and only a
-phone can settle it.
+**This item is no longer a judgement call.** On the local network the certificate is
+self-signed by design (§2.5 of the design spec): the first connection shows a warning and the
+user accepts it. The origin is then `https://`, which is a secure context — but browsers differ
+on what they grant an origin that carries an *outstanding certificate error*. Chrome is
+documented to refuse service-worker registration in that state; Safari on iOS has never been
+checked, and no test on the developer's machine can check it.
+
+So the app now measures instead of assuming. It records what its own runtime granted it —
+`isSecureContext`, whether `register()` resolved or threw and with which error name, whether
+`getUserMedia` is exposed, whether IndexedDB is reachable, whether it was launched from the
+home screen — and shows it in two places: on the phone under **«سرورها» → «این اتصال»**, and in
+the Windows panel through `GET /operator/capabilities`. **The task here is to read those two
+screens and copy the answer into the sign-off table**, not to infer anything from whether the
+library happened to load.
 
 Do this on a phone that has never accepted this computer's certificate.
 
@@ -366,29 +373,85 @@ Do this on a phone that has never accepted this computer's certificate.
 
 1. Open the LAN address the pairing screen shows (`https://<ip>:<port>`).
 2. Read the warning. Accept it once, following the panel's sentence.
-3. Pair, then check the camera path (E1) works on this origin.
-4. Put the phone in airplane mode and reopen the app from the home screen.
-5. Reconnect, restart the Windows app, and open the address again.
+3. Pair, then open **«سرورها» → «این اتصال»** and write down all four rows verbatim.
+4. On Windows, read the same device's row in the panel (or
+   `curl http://127.0.0.1:<port>/operator/capabilities` with the edge-secret header) and check
+   it says the same thing. Note the browser and version yourself — the report deliberately does
+   not collect them.
+5. Put the phone in airplane mode and reopen the app from the home screen.
+6. Reconnect, restart the Windows app, and open the address again.
 
 **Pass looks like:**
 
 - The warning appears **once per device**, not once per launch. If it comes back after a
   restart of the Windows app, the certificate is being regenerated when it should be reused.
-- The camera opens for QR scanning — this is what the old plain-HTTP LAN mode could not do.
-- In airplane mode the library still lists from the offline cache, i.e. the service worker
-  registered.
+- **«رمزگذاری» says «رمزگذاری‌شده»** and the camera row says **«در دسترس»** — this is what the
+  old plain-HTTP LAN mode could not do at all.
+- The two screens agree. The phone and the panel disagreeing is itself a bug.
+- In airplane mode the library still lists from the offline cache **and** the offline-library
+  row said «کار می‌کند» beforehand. Either one alone is not the answer; both together are.
 
-**A failure means:**
+**Every outcome is a result. Record which one:**
 
-- *The warning returns on every launch:* the certificate is not being persisted or its SAN no
-  longer matches the machine's address. Check `<dataDir>/tls` and the server log line
-  `local-network certificate issued` — it should appear once, not on every start.
-- *The service worker refuses to register:* the browser is holding the line described above.
-  Record which browser and version; the honest fix is to say so in the README rather than to
-  claim the offline library works everywhere.
+- *Offline library «کار می‌کند», airplane mode lists the library:* the browser grants a service
+  worker on an accepted self-signed origin. Note the browser and version — this is a positive
+  finding about that browser, not a general one.
+- *Offline library **«مرورگر اجازه نداد»**:* the browser is holding the documented line, and the
+  report will carry `serviceWorker: "refused"` with the error's name (`SecurityError` for
+  Chrome). **This is a pass for the mechanism and a fail for the feature.** LAN mode then gets
+  the camera and encrypted traffic but not the offline library, and the README must say so for
+  that browser rather than claiming it works everywhere. Reaching the machine over the tailnet,
+  which has a real Let's Encrypt certificate, is the only path that gets the offline library on
+  such a browser — plain HTTP does not, and cannot.
+- *Offline library **«ثبت نشد»** with some other error name:* an unfamiliar refusal. Write the
+  name down; it is the whole finding.
+- *«این اتصال» says «بدون رمزگذاری»:* you are on the plain-HTTP fallback listener, not the
+  encrypted one. Nothing about this item can be concluded from that origin — an `http://` page
+  is not a secure context, so a missing offline library there is arithmetic, not evidence. Go
+  back to the `https://` address.
 - *A second, different warning about the name:* the address being published is not in the
   certificate's SAN. The server is supposed to make that impossible by deriving both from one
   place; if it happens, that is a real bug.
+
+### ☐ E3 — The unencrypted fallback, if you ever need it
+
+**Why this exists.** Some browsers will not let you *past* the certificate warning at all — an
+embedded webview with no "proceed" affordance, a TV or kiosk browser, a device under a managed
+configuration profile. For those the choice is plaintext or nothing. It is off by default and
+it is not a repair for E2: `http://` is not a secure context, so a device on it has no offline
+library and no camera, whatever the browser would otherwise have allowed.
+
+Skip this item unless you actually have such a device. If you do:
+
+**Do:**
+
+1. Turn the unencrypted address on in the Windows panel and read the sentence it shows you.
+2. Type that `http://` address on the device by hand.
+3. Pair. Browse. Play something.
+4. On the phone, open **«سرورها» → «این اتصال»**.
+5. Try `http://<ip>:<plaintext-port>/operator/folders` from a browser on the Windows machine.
+6. Turn it off again and confirm the encrypted address still works untouched.
+
+**Pass looks like:**
+
+- The unencrypted address is **not** in the QR code and not on the pairing screen. The only
+  place it appears is the panel.
+- A yellow strip is visible on **every** screen of the app saying, in one sentence, that anyone
+  on this Wi-Fi can read the files. It cannot be dismissed.
+- «این اتصال» says «بدون رمزگذاری», and the offline-library and camera rows both say they are
+  unavailable *because the address is not encrypted*.
+- Step 5 returns **404**. The operator API must be unreachable from that listener, including
+  from the Windows machine's own browser.
+- After step 6 the `https://` address still works, on the same certificate, with no new warning.
+
+**A failure means:**
+
+- *The QR code carries the `http://` address:* a downgrade that happens by scanning is not a
+  choice. Stop and file it.
+- *Step 5 returns anything but 404:* the operator API — the surface that grants access — is
+  exposed on an unencrypted socket. This is the most serious failure on this page.
+- *No strip on the phone:* the app is not saying what it gave up, which is the one thing this
+  listener is required to do.
 
 ---
 
@@ -478,10 +541,17 @@ feels broken even when it is working as designed.
 | C2 — Headscale on a real VPS | ☐ | | |
 | D1 — Files app and Infuse over WebDAV | ☐ | | |
 | E1 — Home-screen install and camera | ☐ | | |
-| E2 — Accepted certificate: camera and offline | ☐ | | |
+| E2 — Accepted certificate: camera and offline | ☐ | | browser + version, and the four rows verbatim |
+| E3 — Unencrypted fallback (only if needed) | ⊘ | | not applicable unless a device refuses TLS |
 | F1 — Revocation mid-stream | ☐ | | |
 | G1 — Unplugged drive | ☐ | | |
 | G2 — Server unreachable | ☐ | | |
 
 A1, C1, C2, E1 and F1 are the ones that would make shipping a mistake. The rest are things
 that should be fixed; these are things that must be.
+
+E2 is no longer one of them, for a reason worth stating: it can no longer *fail* in a way that
+ships a lie. The app reports what the browser granted it and both screens say so, so the worst
+outcome is a documented limitation for a named browser rather than a promise that quietly is
+not kept. What is still unknown is which outcome a real iPhone produces — and one launch now
+answers it.

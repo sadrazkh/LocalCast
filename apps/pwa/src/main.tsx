@@ -5,6 +5,7 @@ import { LocaleProvider } from '@localcast/ui-kit';
 import '@localcast/ui-kit/tokens.css';
 import './styles/global.css';
 import { App } from './App.js';
+import { capabilityStore } from './capabilities/store.js';
 import { ClientProvider } from './client/ClientProvider.js';
 
 /**
@@ -31,24 +32,37 @@ createRoot(container).render(
 registerServiceWorker();
 
 /**
- * Register the worker that puts the bearer on media requests.
+ * Register the worker that puts the bearer on media requests, and record what happened.
  *
- * `virtual:pwa-register` is provided by `vite-plugin-pwa` and registers whichever `sw.js` the
- * build produced. Note what that means today: the plugin is configured with the default
- * `generateSW` strategy, which emits Workbox's own worker and **ignores `src/sw.ts`**. For
- * the auth injection in `src/sw.ts` to actually ship, `apps/pwa/vite.config.ts` needs
- * `strategies: 'injectManifest', srcDir: 'src', filename: 'sw.ts'` — that file is outside
- * this app's ownership, so the change is reported rather than made. Everything on this side
- * is written for it.
+ * `virtual:pwa-register` is provided by `vite-plugin-pwa`, which is configured with
+ * `strategies: 'injectManifest'` and therefore ships `src/sw.ts` itself rather than a
+ * generated Workbox worker — the auth injection is the whole reason this app has a worker at
+ * all, and a generated one cannot express it.
+ *
+ * The outcome is written into the capability store, and this is the load-bearing part. On the
+ * local network the origin carries a certificate the browser was asked to accept, and browsers
+ * differ on what they will grant such an origin: Chrome is documented to refuse service-worker
+ * registration outright, and Safari on iOS has never been checked. That difference is the
+ * difference between having an offline library and not having one, and until now the app
+ * assumed rather than looked. Now it looks, says so on its own settings screen, and tells the
+ * server so the Windows panel can say it too.
  */
 function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
   void import('virtual:pwa-register')
     .then(({ registerSW }) => {
-      registerSW({ immediate: true });
+      registerSW({
+        immediate: true,
+        onRegisteredSW: () => capabilityStore.noteServiceWorker({ ok: true }),
+        // This is the callback that fires on a refusal. Its argument is the browser's own
+        // error, and only its `name` is ever kept.
+        onRegisterError: (error: unknown) => capabilityStore.noteServiceWorker({ ok: false, error }),
+      });
     })
     .catch(() => {
       // A build without the plugin (a plain `vite dev`, a test harness) simply has no worker.
-      // Playback then fails on a 401 rather than silently — which is the right way round.
+      // Playback then fails on a 401 rather than silently — which is the right way round. The
+      // capability store is deliberately left `pending`: nothing was refused here, the build
+      // just did not ship a worker, and reporting a refusal would be a lie about the browser.
     });
 }

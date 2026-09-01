@@ -8,10 +8,12 @@ import type { ExecFileFn } from './exec.js';
 import { defaultExecFile } from './exec.js';
 import {
   assertFallbackCanHonour,
+  assertFallbackCanPrintType,
   buildPrintSettings,
   classifyJobStatus,
   findSumatra,
   listSpoolerJobs,
+  probePrintTo,
   removeSpoolerJob,
   submitToSpooler,
   submitViaPrintTo,
@@ -234,11 +236,24 @@ export class PrintQueue {
 
     // Settings are only expressible through the helper. Without it the job still prints —
     // through the shell's `PrintTo` verb — but only if it asked for nothing the verb cannot
-    // carry, which `assertFallbackCanHonour` decides.
+    // carry and the file's type actually has a handler.
     let settings = '';
     try {
-      if (sumatra) settings = buildPrintSettings(wanted);
-      else assertFallbackCanHonour(wanted, this.ctx.paths.vendorDir);
+      if (sumatra) {
+        settings = buildPrintSettings(wanted);
+      } else {
+        // Cheapest refusal first: the settings check is pure, the type check costs a
+        // PowerShell start-up. Both run only on the fallback path.
+        assertFallbackCanHonour(wanted, this.ctx.paths.vendorDir);
+        const support = await probePrintTo(this.exec, extname(row.file_name));
+        this.ctx.log.info('PrintTo handler lookup', {
+          jobId,
+          ext: support.ext,
+          registered: support.registered,
+          progId: support.progId,
+        });
+        assertFallbackCanPrintType(support, this.ctx.paths.vendorDir);
+      }
     } catch (err) {
       if (!sumatra) {
         this.ctx.log.error('print helper missing', { vendorDir: this.ctx.paths.vendorDir });
@@ -426,9 +441,15 @@ export class PrintQueue {
       await this.sleep(this.pollIntervalMs);
     }
 
+    // The duration is rendered from the configured timeout rather than written into the
+    // sentence. It used to read "ten minutes" unconditionally, which was a lie in every test
+    // that shortens the timeout and would have been a lie in production the day the default
+    // changed — and this is the one message a user gets for a job that never finished.
     return {
       status: 'error',
-      message: 'The job was still in the Windows queue after ten minutes and was given up on.',
+      message:
+        `The job was still in the Windows queue after ${describeDuration(this.pollTimeoutMs)} ` +
+        'and was given up on. The printer is most likely paused, offline or out of paper.',
     };
   }
 
@@ -532,4 +553,14 @@ export class PrintQueue {
 function describe(err: unknown): string {
   if (err instanceof ApiException) return err.message;
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Plain English for a timeout, so the message reads the same to a user as to a test. */
+export function describeDuration(ms: number): string {
+  if (ms < 60_000) {
+    const seconds = Math.max(1, Math.round(ms / 1_000));
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  }
+  const minutes = Math.round(ms / 60_000);
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }

@@ -23,6 +23,7 @@ import type { Indexer } from '../../library/indexer.js';
 import { stripLongPathPrefix, withLongPathPrefix, type FolderRow } from '../../library/resolver.js';
 import type { ServerContext } from '../../kernel.js';
 import { wrap } from '../errors.js';
+import type { CapabilityReports } from '../capabilities.js';
 import { createNetworkConfigRouter } from './operatorNetwork.js';
 import { createOperatorPrinterRouter } from './operatorPrinters.js';
 
@@ -42,6 +43,7 @@ export interface OperatorRouterDeps {
   pairing: PairingService;
   indexer: Indexer;
   activity: SqliteActivityLog;
+  capabilities: CapabilityReports;
 }
 
 const patchFolderSchema = z.object({
@@ -82,7 +84,7 @@ const activityQuerySchema = z.object({
 
 export function createOperatorRouter(deps: OperatorRouterDeps): Router {
   const router = Router();
-  const { ctx, tokens, pairing, indexer, activity } = deps;
+  const { ctx, tokens, pairing, indexer, activity, capabilities } = deps;
   const { db } = ctx;
 
   router.use(loopbackOnly());
@@ -220,6 +222,34 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
     }),
   );
 
+  /**
+   * What each device's browser told us it could do, so the panel can say "this phone could
+   * not install the offline library" instead of the user finding out in an aeroplane.
+   *
+   * Only devices heard from since the app started appear. That is the honest set: a report is
+   * an observation of a browser at a moment, and one from three weeks and an iOS update ago
+   * would be a claim rather than a fact. `reportedAt` is included so the panel can say when.
+   *
+   * The device name is joined in here rather than left to the caller: the panel renders a
+   * sentence about a phone, and a sentence about `9f3c-…` is not one.
+   */
+  router.get(
+    '/capabilities',
+    wrap((_req, res) => {
+      const reports = capabilities.list().map((report) => {
+        const device = tokens.getDevice(report.deviceId);
+        return {
+          ...report,
+          // Null rather than omitted: a device deleted between the report and this read is a
+          // real state, and the panel should show the report rather than drop it silently.
+          deviceName: device?.name ?? null,
+          platform: device?.platform ?? null,
+        };
+      });
+      res.json({ reports });
+    }),
+  );
+
   router.post(
     '/devices/:id/approve',
     wrap(async (req, res) => {
@@ -276,6 +306,9 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
       // in-flight request loses its token in the same instant.
       tokens.revoke(id);
       db.prepare('DELETE FROM devices WHERE id = ?').run(id);
+      // The capability report outlives the row otherwise, and the panel would keep saying
+      // something about a phone that is no longer in the list.
+      capabilities.forget(id);
       ctx.activity.record('device.deleted', null, { name: device.name });
       res.status(204).end();
     }),

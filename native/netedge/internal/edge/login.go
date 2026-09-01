@@ -90,6 +90,15 @@ type loginPublisher struct {
 	status *StatusStore
 	logf   logFunc
 
+	// commit performs the store write, and reports whether it happened.
+	//
+	// It is a hook rather than a direct call so Edge can refuse the write once the generation
+	// this publisher belongs to has been replaced. tsnet reprints its sign-in prompt every
+	// five seconds until it is closed, and the status poll repeats the same URL twice a
+	// second, so a node being torn down has several chances to publish a sign-in link for the
+	// control server the user has just switched away from. Nil means publish unconditionally.
+	commit func(write func() error) bool
+
 	// Both sources run on their own goroutines. The lock makes read-then-publish atomic, so
 	// two of them that see the same URL at the same moment still produce one status change.
 	mu sync.Mutex
@@ -125,7 +134,12 @@ func (p *loginPublisher) publish(loginURL string) bool {
 	if cur.State == protocol.StateLoginRequired && cur.LoginURL != nil && *cur.LoginURL == loginURL {
 		return false
 	}
-	if err := p.status.SetLoginRequired(loginURL); err != nil {
+
+	write := func() error { return p.status.SetLoginRequired(loginURL) }
+	if p.commit != nil {
+		return p.commit(write)
+	}
+	if err := write(); err != nil {
 		p.logf(protocol.LogWarn, "%v", err)
 		return false
 	}

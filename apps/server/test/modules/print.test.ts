@@ -12,12 +12,15 @@ import {
 } from '../../src/modules/print/enumerate.js';
 import {
   assertFallbackCanHonour,
+  assertFallbackCanPrintType,
   buildPrintSettings,
   buildSumatraArgs,
   classifyJobStatus,
   listSpoolerJobs,
   LIST_JOBS_SCRIPT,
+  PRINT_TO_PROBE_SCRIPT,
   PRINT_TO_SCRIPT,
+  probePrintTo,
 } from '../../src/modules/print/spooler.js';
 import { assertPrintable } from '../../src/modules/print/routes.js';
 import type { ServerModule } from '../../src/kernel.js';
@@ -50,6 +53,10 @@ interface FakeOptions {
   submitFails?: boolean;
   /** The shell has no `PrintTo` handler for the type, so `Start-Process` throws. */
   printToFails?: boolean;
+  /** What the registry probe finds: a ProgId carrying `printto`, or nothing. */
+  printToProgId?: string | null;
+  /** The registry could not be read at all, which is not the same as "no handler". */
+  printToProbeFails?: boolean;
 }
 
 function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: ExecCall[] } {
@@ -62,6 +69,16 @@ function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: E
     calls.push({ file, args: list, script, env: execOptions.env });
 
     if (script?.includes('Remove-PrintJob')) return { stdout: '', stderr: '' };
+
+    // The registry lookup that decides whether the shell can print this type at all.
+    if (script?.includes('shell\\printto')) {
+      if (options.printToProbeFails) throw new Error('Cannot find path HKCU:\\Software\\...');
+      const progId = options.printToProgId === undefined ? 'pdffile' : options.printToProgId;
+      return {
+        stdout: JSON.stringify({ ProgId: progId ?? '', PrintTo: progId !== null }),
+        stderr: '',
+      };
+    }
 
     if (script?.includes('Get-PrintJob')) {
       if (options.spoolerUnreadable) throw new Error('The specified printer was not found.');
@@ -263,6 +280,99 @@ describe('the helper-free fallback', () => {
     expect(PRINT_TO_SCRIPT).toContain('$env:LC_PRINTER');
     expect(PRINT_TO_SCRIPT).toContain('$env:LC_FILE');
     expect(PRINT_TO_SCRIPT).toContain('-Verb PrintTo');
+  });
+});
+
+describe('the PrintTo handler probe', () => {
+  function probeExec(stdout: string): { exec: ExecFileFn; seen: ExecCall[] } {
+    const seen: ExecCall[] = [];
+    const exec: ExecFileFn = async (file, args, execOptions: ExecOptions = {}) => {
+      const list = [...args];
+      seen.push({ file, args: list, script: list[list.length - 1] ?? null, env: execOptions.env });
+      return { stdout, stderr: '' };
+    };
+    return { exec, seen };
+  }
+
+  it('reads the extension from the environment, never from the script text', async () => {
+    const { exec, seen } = probeExec('{"ProgId":"pngfile","PrintTo":true}');
+    await probePrintTo(exec, '.PNG');
+    expect(seen[0]?.env?.['LC_EXT']).toBe('.png');
+    expect(seen[0]?.script).toContain('$env:LC_EXT');
+    expect(seen[0]?.script).not.toContain('.png');
+    expect(PRINT_TO_PROBE_SCRIPT).toContain('shell\\printto');
+  });
+
+  it('reports a registered handler with the ProgId that carries it', async () => {
+    const { exec } = probeExec('{"ProgId":"Acrobat.Document.DC","PrintTo":true}');
+    await expect(probePrintTo(exec, '.pdf')).resolves.toEqual({
+      ext: '.pdf',
+      registered: true,
+      progId: 'Acrobat.Document.DC',
+      known: true,
+    });
+  });
+
+  it('reports .bmp as unregistered, which is what the registry actually says', async () => {
+    // Measured on the reference machine: `.bmp` resolves to `Paint.Picture`, which has no
+    // `printto` verb, so PrintTo cannot print a bitmap even though LocalCast accepts one.
+    const { exec } = probeExec('{"ProgId":"","PrintTo":false}');
+    await expect(probePrintTo(exec, '.bmp')).resolves.toEqual({
+      ext: '.bmp',
+      registered: false,
+      progId: null,
+      known: true,
+    });
+  });
+
+  it('refuses a file name that is not an extension instead of building a registry path', async () => {
+    const { exec, seen } = probeExec('{"ProgId":"x","PrintTo":true}');
+    // `..\\..` in the place of an extension would walk to another key. It never gets there.
+    await expect(probePrintTo(exec, '.\\..\\..\\evil')).resolves.toMatchObject({
+      registered: false,
+      known: true,
+    });
+    expect(seen).toEqual([]);
+  });
+
+  it('says it does not know when the registry could not be read', async () => {
+    const exec: ExecFileFn = async () => {
+      throw new Error('powershell.exe is not recognized');
+    };
+    // known:false, not registered:false — an unanswerable question must not become a refusal.
+    await expect(probePrintTo(exec, '.pdf')).resolves.toEqual({
+      ext: '.pdf',
+      registered: false,
+      progId: null,
+      known: false,
+    });
+  });
+
+  it('refuses only what it positively knows has no handler', () => {
+    const base = { ext: '.bmp', progId: null };
+    expect(() =>
+      assertFallbackCanPrintType({ ...base, registered: false, known: true }, 'C:/vendor'),
+    ).toThrow(/no application registered to print \.bmp/);
+    expect(() =>
+      assertFallbackCanPrintType({ ...base, registered: false, known: true }, 'C:/vendor'),
+    ).toThrow(/SumatraPDF\.exe/);
+
+    // Registered, or unknown: both go ahead and let Windows answer for itself.
+    expect(() =>
+      assertFallbackCanPrintType({ ...base, registered: true, known: true }, 'C:/vendor'),
+    ).not.toThrow();
+    expect(() =>
+      assertFallbackCanPrintType({ ...base, registered: false, known: false }, 'C:/vendor'),
+    ).not.toThrow();
+  });
+
+  it('gives PDFs their own reason, because their fix is a different sentence', () => {
+    expect(() =>
+      assertFallbackCanPrintType(
+        { ext: '.pdf', registered: false, progId: null, known: true },
+        'C:/vendor',
+      ),
+    ).toThrow(/Edge, the default PDF viewer/);
   });
 });
 
@@ -555,18 +665,78 @@ describe('POST /print', () => {
     expect(printTo?.env?.['LC_FILE']).toMatch(/print-.*\.pdf$/);
   });
 
-  it('refuses, naming the helper, when the fallback cannot honour the request', async () => {
-    // `PrintTo` takes a file and a printer and nothing else. Printing one copy when two were
-    // asked for would be worse than saying so.
-    await boot({ withBinary: false });
+  it.each([
+    [{ copies: 2 }, /more than one copy/],
+    [{ duplex: 'long' as const }, /double-sided printing/],
+    [{ pageRange: '2-3' }, /a page range/],
+  ])(
+    'refuses %o without the helper, naming what is missing and printing nothing',
+    async (extra, pattern) => {
+      // `PrintTo` takes a file and a printer and nothing else. Printing one copy when two
+      // were asked for, or 400 pages when page 3 was asked for, is worse than saying so.
+      // Asserted through HTTP rather than only on the pure function, because the thing that
+      // matters is that the *job* refuses — the comment on the pure function proves nothing
+      // about whether anything calls it.
+      const calls = await boot({ withBinary: false });
+      const { job } = (await (
+        await printJson({ printerId, source: { kind: 'library', fileId: pdfId }, ...extra })
+      ).json()) as { job: { id: string } };
+
+      await settle(job.id, 'error');
+      expect(errorOf(job.id)).toMatch(pattern);
+      expect(errorOf(job.id)).toMatch(/SumatraPDF\.exe/);
+      expect(errorOf(job.id)).toMatch(/Nothing was sent to the printer/);
+      expect(statusOf(job.id)).not.toBe('done');
+      // Not "refused after submitting": the shell was never asked to print anything.
+      expect(calls.some((call) => call.script?.includes('Start-Process'))).toBe(false);
+    },
+  );
+
+  it('refuses a .bmp without the helper, because no ProgId registers printto for it', async () => {
+    // Observed in the registry on the reference machine: `.bmp` → `Paint.Picture`, which has
+    // no `printto` verb. Attempting it anyway fails after the spool copy exists, with a
+    // message from the shell that names neither the type nor the fix.
+    const bmpId = await harness.putFile(folderId, 'scan.bmp', Buffer.from('BM fake'));
+    const calls = await boot({ withBinary: false, printToProgId: null });
     const { job } = (await (
-      await printJson({ printerId, source: { kind: 'library', fileId: pdfId }, copies: 2 })
+      await printJson({ printerId, source: { kind: 'library', fileId: bmpId } })
     ).json()) as { job: { id: string } };
 
     await settle(job.id, 'error');
+    expect(errorOf(job.id)).toMatch(/no application registered to print \.bmp/);
     expect(errorOf(job.id)).toMatch(/SumatraPDF\.exe/);
-    expect(errorOf(job.id)).toMatch(/more than one copy/);
-    expect(statusOf(job.id)).not.toBe('done');
+    expect(calls.some((call) => call.script?.includes('Start-Process'))).toBe(false);
+    // The spool copy is not left behind by the refusal.
+    expect((await readdir(harness.ctx.paths.tempDir)).filter((n) => n.startsWith('print-'))).toEqual(
+      [],
+    );
+  });
+
+  it('refuses a PDF on a machine where only Edge handles PDFs', async () => {
+    const calls = await boot({ withBinary: false, printToProgId: null });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'error');
+    expect(errorOf(job.id)).toMatch(/No PDF reader on this machine/);
+    expect(calls.some((call) => call.script?.includes('Start-Process'))).toBe(false);
+  });
+
+  it('still tries when the registry could not be read, rather than refusing on a guess', async () => {
+    // "I could not find out" is not "there is no handler". Turning one into the other would
+    // refuse every job on a machine where the probe itself is broken.
+    const calls = await boot({
+      withBinary: false,
+      printToProbeFails: true,
+      spooler: [[], [{ Id: 44, JobStatus: 'Printing' }], []],
+    });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'done');
+    expect(calls.some((call) => call.script?.includes('Start-Process'))).toBe(true);
   });
 
   it('fails loudly when neither the helper nor a PrintTo handler exists', async () => {

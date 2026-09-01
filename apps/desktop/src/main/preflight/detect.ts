@@ -41,7 +41,7 @@ const execFileAsync = promisify(execFile);
  *
  * So its absence costs one feature and says so, like the missing print helper does.
  */
-const NETEDGE_SEVERITY = 'degrading' as const;
+export const NETEDGE_SEVERITY = 'degrading' as const;
 
 /** `go version go1.23.4 windows/amd64` */
 const GO_VERSION = /^go version go(\d+)\.(\d+)(?:\.(\d+))?/;

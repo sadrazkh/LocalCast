@@ -74,6 +74,25 @@ export interface ServerConfig {
    * certificate predictable.
    */
   lanHosts: string[];
+  /**
+   * A **second, unencrypted** local-network listener, for devices whose browser will not use
+   * the encrypted one at all.
+   *
+   * Off, and it stays off unless a person turns it on and is shown what it costs. It is not a
+   * repair for the offline library: a plain-`http://` origin is not a secure context on any
+   * browser, so it has no service worker and no camera — strictly fewer capabilities than the
+   * HTTPS listener with an accepted warning, not more. What it is for is the narrow case where
+   * a device cannot get past the certificate interstitial in the first place (an embedded
+   * webview with no "proceed" affordance, a TV browser, a kiosk policy): there the choice is
+   * plaintext or nothing at all.
+   *
+   * Every consequence of turning it on is local to this listener. The HTTPS listener keeps
+   * running, keeps its certificate, and stays the address published in the QR code — nothing
+   * moves onto this one unless somebody types its address by hand.
+   */
+  lanPlaintext: boolean;
+  /** Port for the unencrypted listener. Separate socket, so it can never share TLS state. */
+  lanPlaintextPort: number;
   logLevel: LogLevel;
 }
 
@@ -119,6 +138,10 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     lan: overrides.lan ?? false,
     lanPort: overrides.lanPort ?? 0,
     lanHosts: overrides.lanHosts ?? [],
+    // Default false, and deliberately not derived from `lan`: sharing over the local network
+    // must never imply sharing it unencrypted.
+    lanPlaintext: overrides.lanPlaintext ?? false,
+    lanPlaintextPort: overrides.lanPlaintextPort ?? 0,
     logLevel: overrides.logLevel ?? 'info',
   };
 }

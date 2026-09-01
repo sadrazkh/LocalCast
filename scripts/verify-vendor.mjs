@@ -7,62 +7,96 @@
  *
  *   node scripts/verify-vendor.mjs            # verify, non-zero exit on mismatch
  *   node scripts/verify-vendor.mjs --record   # record what is on disk right now
+ *
+ * The pieces are exported as well as run, because `install-print-helper.mjs` and
+ * `doctor.mjs` need the same manifest and the same digest — a second implementation of
+ * either is a second thing to drift.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const MANIFEST = join(ROOT, 'vendor', 'checksums.json');
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const MANIFEST = join(ROOT, 'vendor', 'checksums.json');
 
 /** Files LocalCast expects, and whether the build can proceed without them. */
-const EXPECTED = [{ path: 'vendor/bin/SumatraPDF.exe', required: false, purpose: 'printing' }];
+export const EXPECTED = [{ path: 'vendor/bin/SumatraPDF.exe', required: false, purpose: 'printing' }];
 
-const record = process.argv.includes('--record');
-
-function sha256(file) {
+export function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
-const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {};
-let failed = false;
+export function readManifest() {
+  return existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {};
+}
 
-for (const entry of EXPECTED) {
-  const abs = join(ROOT, entry.path);
+export function writeManifest(manifest) {
+  writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+}
 
-  if (!existsSync(abs)) {
-    const level = entry.required ? 'MISSING' : 'absent';
-    console.log(`${level}  ${entry.path}  (${entry.purpose} will be unavailable)`);
-    if (entry.required) failed = true;
-    continue;
+/** The digest previously recorded for a vendored path, or null if none ever was. */
+export function recordedDigest(relPath) {
+  return readManifest()[relPath]?.sha256 ?? null;
+}
+
+/**
+ * Writes a digest computed from a file that exists. There is deliberately no way to write one
+ * from a string: the whole value of this manifest is that every entry was measured.
+ */
+export function recordDigest(relPath, absFile) {
+  const manifest = readManifest();
+  const digest = sha256(absFile);
+  manifest[relPath] = { sha256: digest, recordedBytes: statSync(absFile).size };
+  writeManifest(manifest);
+  return digest;
+}
+
+export function verifyVendor({ record = false, log = console.log, logError = console.error } = {}) {
+  const manifest = readManifest();
+  let failed = false;
+
+  for (const entry of EXPECTED) {
+    const abs = join(ROOT, entry.path);
+
+    if (!existsSync(abs)) {
+      const level = entry.required ? 'MISSING' : 'absent';
+      log(`${level}  ${entry.path}  (${entry.purpose} will be unavailable)`);
+      if (entry.required) failed = true;
+      continue;
+    }
+
+    const actual = sha256(abs);
+
+    if (record) {
+      manifest[entry.path] = { sha256: actual, recordedBytes: statSync(abs).size };
+      log(`recorded  ${entry.path}  ${actual}`);
+      continue;
+    }
+
+    const expected = manifest[entry.path]?.sha256;
+    if (!expected) {
+      log(`unrecorded  ${entry.path}  ${actual}  — run with --record once you have checked it`);
+      continue;
+    }
+    if (expected !== actual) {
+      logError(`MISMATCH  ${entry.path}\n  expected ${expected}\n  actual   ${actual}`);
+      failed = true;
+      continue;
+    }
+    log(`ok  ${entry.path}  ${actual}`);
   }
-
-  const actual = sha256(abs);
 
   if (record) {
-    manifest[entry.path] = { sha256: actual, recordedBytes: readFileSync(abs).length };
-    console.log(`recorded  ${entry.path}  ${actual}`);
-    continue;
+    writeManifest(manifest);
+    log(`\nwrote ${MANIFEST}`);
+    log('Check these against the digests the upstream project publishes before trusting them.');
   }
 
-  const expected = manifest[entry.path]?.sha256;
-  if (!expected) {
-    console.log(`unrecorded  ${entry.path}  ${actual}  — run with --record once you have checked it`);
-    continue;
-  }
-  if (expected !== actual) {
-    console.error(`MISMATCH  ${entry.path}\n  expected ${expected}\n  actual   ${actual}`);
-    failed = true;
-    continue;
-  }
-  console.log(`ok  ${entry.path}  ${actual}`);
+  return { failed };
 }
 
-if (record) {
-  writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log(`\nwrote ${MANIFEST}`);
-  console.log('Check these against the digests the upstream project publishes before trusting them.');
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { failed } = verifyVendor({ record: process.argv.includes('--record') });
+  process.exit(failed ? 1 : 0);
 }
-
-process.exit(failed ? 1 : 0);

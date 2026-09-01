@@ -108,6 +108,33 @@ export const appFa = {
   'pair.invalid': 'این کد پذیرفته نشد',
   'pair.deviceNameDefault': 'آیفون',
 
+  // ── what this browser actually granted (see src/capabilities) ────────────────────
+  //
+  // Written as findings, not as settings. The user cannot change any of these from here; what
+  // they can do is understand why the offline library is missing instead of assuming the app
+  // is broken. The unencrypted sentence names the cost in one line and does not soften it —
+  // there is no "compatibility mode" here, because that is not what it is.
+  'capabilities.title': 'این اتصال',
+  'capabilities.unencrypted': 'این نشانی رمزگذاری نشده است؛ هر کسی روی همین وای‌فای می‌تواند نام و محتوای فایل‌های شما را بخواند.',
+  'capabilities.unencryptedCost':
+    'روی نشانی بدون رمزگذاری، کتابخانهٔ آفلاین و دوربین اصلاً کار نمی‌کنند. مرورگرها این دو را فقط به نشانی رمزگذاری‌شده می‌دهند.',
+  'capabilities.encryptionLabel': 'رمزگذاری',
+  'capabilities.encryptionOn': 'رمزگذاری‌شده',
+  'capabilities.encryptionOff': 'بدون رمزگذاری',
+  'capabilities.offlineLibrary': 'کتابخانهٔ آفلاین',
+  'capabilities.camera': 'دوربین برای اسکن QR',
+  'capabilities.installed': 'نصب‌شده روی صفحهٔ خانه',
+  'capabilities.swRegistered': 'کار می‌کند',
+  'capabilities.swRefused': 'مرورگر اجازه نداد؛ گواهی این رایانه را نمی‌پذیرد',
+  'capabilities.swInsecure': 'به‌خاطر نشانی بدون رمزگذاری در دسترس نیست',
+  'capabilities.swUnsupported': 'این مرورگر پشتیبانی نمی‌کند',
+  'capabilities.swFailed': 'ثبت نشد',
+  'capabilities.swPending': 'در حال بررسی',
+  'capabilities.cameraAvailable': 'در دسترس',
+  'capabilities.cameraInsecure': 'به‌خاطر نشانی بدون رمزگذاری در دسترس نیست',
+  'capabilities.cameraUnsupported': 'این مرورگر پشتیبانی نمی‌کند',
+  'capabilities.storageMemory': 'این مرورگر چیزی را ماندگار ذخیره نمی‌کند',
+
   // ── shared ───────────────────────────────────────────────────────────────────────
   'app.reconnecting': 'در حال تلاش برای اتصال دوباره',
   'app.staleData': 'داده‌های ذخیره‌شده',
@@ -203,6 +230,28 @@ export const appEn: AppMessages = {
   'pair.paired': 'Paired',
   'pair.invalid': 'That code was not accepted',
   'pair.deviceNameDefault': 'iPhone',
+
+  'capabilities.title': 'This connection',
+  'capabilities.unencrypted':
+    'This address is not encrypted: anyone else on this Wi-Fi can read your file names and your files.',
+  'capabilities.unencryptedCost':
+    'On an unencrypted address the offline library and the camera do not work at all. Browsers grant both only to an encrypted one.',
+  'capabilities.encryptionLabel': 'Encryption',
+  'capabilities.encryptionOn': 'Encrypted',
+  'capabilities.encryptionOff': 'Not encrypted',
+  'capabilities.offlineLibrary': 'Offline library',
+  'capabilities.camera': 'Camera for QR scanning',
+  'capabilities.installed': 'Installed on the home screen',
+  'capabilities.swRegistered': 'Working',
+  'capabilities.swRefused': 'The browser refused: it does not accept this computer’s certificate',
+  'capabilities.swInsecure': 'Unavailable because the address is not encrypted',
+  'capabilities.swUnsupported': 'This browser does not support it',
+  'capabilities.swFailed': 'Did not register',
+  'capabilities.swPending': 'Checking',
+  'capabilities.cameraAvailable': 'Available',
+  'capabilities.cameraInsecure': 'Unavailable because the address is not encrypted',
+  'capabilities.cameraUnsupported': 'This browser does not support it',
+  'capabilities.storageMemory': 'This browser stores nothing permanently',
 
   'app.reconnecting': 'Trying to reconnect',
   'app.staleData': 'Saved data',

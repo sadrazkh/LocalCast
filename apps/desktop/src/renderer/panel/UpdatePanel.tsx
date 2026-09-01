@@ -25,6 +25,8 @@ const TEXT = {
   installed: 'نسخه‌ی فعلی',
   latest: 'نسخه‌ی تازه',
   check: 'بررسی دوباره',
+  checkNow: 'بررسی به‌روزرسانی',
+  idle: 'برای دیدن اینکه نسخه‌ی تازه‌ای هست، یک‌بار بررسی کنید. تا آن لحظه هیچ درخواستی از این دستگاه بیرون نمی‌رود.',
   install: 'دانلود و نصب',
   open: 'باز کردن صفحه‌ی دانلود',
   downloading: 'در حال دانلود…',
@@ -35,21 +37,35 @@ const TEXT = {
 export function UpdatePanel() {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const check = useCallback(async () => {
-    setState(null);
+    setChecking(true);
     setError(null);
-    setState((await window.localcast.updates.check()) as State);
+    try {
+      setState((await window.localcast.updates.check()) as State);
+    } finally {
+      setChecking(false);
+    }
   }, []);
 
-  useEffect(() => {
-    void check();
-    return window.localcast.updates.onProgress(({ receivedBytes, totalBytes }) => {
-      setProgress(totalBytes > 0 ? receivedBytes / totalBytes : null);
-    });
-  }, [check]);
+  /**
+   * Subscribe, but do not check.
+   *
+   * Checking on mount meant that opening Settings — including from the tray, which routes
+   * here — contacted GitHub without anyone asking for it. The product's first promise is that
+   * nothing leaves the machine unless the user chose it, and an update check is traffic
+   * leaving the machine. It is one button press away instead.
+   */
+  useEffect(
+    () =>
+      window.localcast.updates.onProgress(({ receivedBytes, totalBytes }) => {
+        setProgress(totalBytes > 0 ? receivedBytes / totalBytes : null);
+      }),
+    [],
+  );
 
   const install = useCallback(async () => {
     setBusy(true);
@@ -68,10 +84,12 @@ export function UpdatePanel() {
 
   return (
     <Panel title={TEXT.title}>
-      {state === null ? (
+      {checking ? (
         <p className={styles.line}>
           <Spinner size="sm" /> {TEXT.checking}
         </p>
+      ) : state === null ? (
+        <p className={styles.muted}>{TEXT.idle}</p>
       ) : state.status === 'error' ? (
         <p className={styles.muted}>
           {TEXT.failed} — {state.message}
@@ -112,9 +130,9 @@ export function UpdatePanel() {
 
       {error ? <p className={styles.error}>{error}</p> : null}
 
-      {state !== null && !busy ? (
-        <Button variant="ghost" onClick={() => void check()}>
-          {TEXT.check}
+      {!checking && !busy ? (
+        <Button variant={state === null ? 'secondary' : 'ghost'} onClick={() => void check()}>
+          {state === null ? TEXT.checkNow : TEXT.check}
         </Button>
       ) : null}
     </Panel>
