@@ -12,6 +12,30 @@ Everything in this file is what those tests **cannot** prove, because it needs a
 network, a real iPhone, a real printer, a real 4K file, or a real VPS. A green test suite and
 an unticked checklist means the software is correct and unproven.
 
+## Run the automated half first
+
+```bash
+npm run acceptance
+```
+
+Five of the items below turned out to need only a real server and a network hop — not an
+iPhone — so they are no longer manual. `scripts/acceptance.mjs` starts a real server, shares a
+5 GiB sparse file, pairs a device over this machine's own LAN address and checks:
+
+| Item | Now automated |
+|------|---------------|
+| A1 | byte-exact seeking at six offsets, including across the 4 GiB boundary |
+| A2 | an MKV reported unplayable, so the client offers the native handoff |
+| F1 | a revoked device refused on its very next request |
+| G1 | an unplugged drive marked unavailable rather than silently emptied |
+| — | pairing over the network and receiving a device token |
+
+They are left in this file because the automated version proves them over a LAN hop, and the
+manual version proves them over a **carrier network**, which is a different claim. Run the
+script first: if it fails there is no point taking the phone outside.
+
+Everything else here still needs the hardware.
+
 ## How to use this
 
 Work top to bottom. Later items assume earlier ones passed — there is no point testing WebDAV
