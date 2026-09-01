@@ -24,7 +24,11 @@ const created: string[] = [];
 export function tempDir(prefix = 'lc-test-'): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   created.push(dir);
-  return dir;
+  // Canonicalised, and `.native` specifically, because the resolver canonicalises the same
+  // way. On a machine whose temp directory lives under a Windows 8.3 short name — every
+  // GitHub runner, none of ours — the raw path and the resolved one are two spellings of the
+  // same directory, and a containment assertion between them fails for no real reason.
+  return fs.realpathSync.native(dir);
 }
 
 export function cleanupTempDirs(): void {

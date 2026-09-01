@@ -1,10 +1,23 @@
 import { createHash } from 'node:crypto';
+import fsCallbacks from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ApiException, ErrorCode } from '@localcast/contract';
 import type { Database as Db } from 'better-sqlite3';
 import type { FileResolver, ResolvedFile } from '../kernel.js';
+import { promisify } from 'node:util';
 import { toEntry } from './mediaTypes.js';
+
+/**
+ * `realpath` that also resolves Windows 8.3 short names.
+ *
+ * The plain implementation follows junctions and symlinks but leaves `PROGRA~1` as it found
+ * it, so two names for the same directory compare unequal and containment can be decided on
+ * the wrong string. That is a documented way to walk past a path check, not a cosmetic
+ * difference — and it is why the whole suite passed on a developer machine and failed on a CI
+ * runner, whose temp directory sits under a short name.
+ */
+const realpathNative = promisify(fsCallbacks.realpath.native);
 
 /**
  * Path resolution. Everything that serves a byte goes through here, so this file is the one
@@ -149,7 +162,7 @@ export function fileIdFor(folderId: string, relPath: string): string {
 
 async function realpathOrDeepest(target: string): Promise<{ real: string; existed: boolean }> {
   try {
-    return { real: await fs.realpath(target), existed: true };
+    return { real: await realpathNative(target), existed: true };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
@@ -168,7 +181,7 @@ async function realpathOrDeepest(target: string): Promise<{ real: string; existe
         ? head.join('\\')
         : `/${head.join('/')}`;
     try {
-      const real = await fs.realpath(withLongPathPrefix(probe));
+      const real = await realpathNative(withLongPathPrefix(probe));
       return { real: tail.length ? path.join(real, ...tail) : real, existed: false };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
@@ -210,7 +223,7 @@ export class FsFileResolver implements FileResolver {
     // rules dies here without ever touching the filesystem.
     if (!isInsideRoot(root, joined)) throw escapes();
 
-    const rootReal = await fs.realpath(withLongPathPrefix(root)).catch((err: unknown) => {
+    const rootReal = await realpathNative(withLongPathPrefix(root)).catch((err: unknown) => {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new ApiException(ErrorCode.FOLDER_UNAVAILABLE, 'This folder is not available');
       }

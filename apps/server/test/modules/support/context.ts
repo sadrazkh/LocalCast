@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -78,7 +79,10 @@ export interface TestServer {
 }
 
 export async function createHarness(): Promise<Harness> {
-  const root = await mkdtemp(join(tmpdir(), 'localcast-modules-'));
+  // realpath.native: the resolver canonicalises the same way, and a CI runner's temp
+  // directory sits under a Windows 8.3 short name, where the raw and resolved spellings of
+  // one directory do not compare equal.
+  const root = realpathSync.native(await mkdtemp(join(tmpdir(), 'localcast-modules-')));
   const dataDir = join(root, 'data');
   const tempDir = join(root, 'temp');
   const vendorDir = join(root, 'vendor');
