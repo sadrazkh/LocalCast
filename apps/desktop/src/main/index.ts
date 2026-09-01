@@ -128,6 +128,8 @@ async function bootstrap(): Promise<void> {
     resourcesPath: process.resourcesPath,
     repoRoot: p.repoRoot,
     vendorDir: p.vendorDir,
+    // The same fallback the server gets, so the check tests what will actually be loaded.
+    nativeBinding: existsSync(p.nativeBinding) ? p.nativeBinding : '',
   };
 
   // Non-null exactly while bootstrap is parked waiting for a blocking prerequisite to be

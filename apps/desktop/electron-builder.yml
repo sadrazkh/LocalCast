@@ -38,6 +38,19 @@ extraResources:
   - from: ../../vendor/bin
     to: vendor
     filter: ['**/*']
+  # better_sqlite3 compiled for Electron's ABI.
+  #
+  # node_modules deliberately holds the Node-ABI build so the test suite runs, and the app
+  # loads this copy instead through better-sqlite3's nativeBinding option. Without this entry
+  # the installer ships only the Node build and the app dies at its first database call with
+  # NODE_MODULE_VERSION — an installer that installs cleanly and then cannot start.
+  #
+  # The glob covers the electron-<abi> directory scripts/rebuild-native.mjs writes, so the
+  # path does not have to be restated here every time Electron's ABI changes. main/index.ts
+  # joins resources/native/better_sqlite3.node, which is why the file is flattened.
+  - from: ../../vendor/native
+    to: native
+    filter: ['better_sqlite3.node']
   # The built PWA, served to phones by the Node server.
   - from: ../pwa/dist
     to: web

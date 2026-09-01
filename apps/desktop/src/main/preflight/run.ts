@@ -72,7 +72,7 @@ async function detectAll(ctx: PreflightContext): Promise<PreflightReport> {
   const items = await Promise.all([
     guard('netedge', 'blocking', () => detectNetEdge(ctx)),
     guard('print-helper', 'degrading', () => detectPrintHelper(ctx)),
-    guard('native-modules', 'blocking', () => detectNativeModules()),
+    guard('native-modules', 'blocking', () => detectNativeModules(ctx.nativeBinding)),
   ]);
 
   const report = summarise(items);

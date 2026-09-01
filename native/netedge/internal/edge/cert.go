@@ -410,9 +410,9 @@ func dnsSolverProvider(name protocol.DNSProvider, token string) (certmagic.DNSPr
 		return &digitalocean.Provider{APIToken: token}, nil
 
 	case protocol.DNSProviderGandi:
-		// VERIFY: Gandi moved from an API key to a personal access token and the libdns
-		// field was renamed with it (APIToken vs BearerToken, depending on the release).
-		return &gandi.Provider{APIToken: token}, nil
+		// Gandi moved from an API key to a personal access token, and libdns renamed the
+		// field to match: it is BearerToken as of libdns/gandi v1.1.0, not APIToken.
+		return &gandi.Provider{BearerToken: token}, nil
 
 	case protocol.DNSProviderRoute53:
 		id, secret, ok := strings.Cut(token, ":")

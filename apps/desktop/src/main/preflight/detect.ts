@@ -271,16 +271,28 @@ export function diagnoseNativeModuleError(err: unknown): NativeModuleDiagnosis {
 const nodeRequire = createRequire(import.meta.url);
 
 /**
- * Loads the native module for real, in this process.
+ * Opens a database for real, in this process, through the binding the app will use.
  *
- * There is no way to answer "will Electron be able to open the database" other than asking
- * Electron to load the binding, which is why this is a `require` and not a file-existence
- * check: the ABI mismatch this exists to catch is invisible on disk.
+ * A bare `require('better-sqlite3')` is not enough and was the original bug here: the package
+ * loads its JavaScript eagerly and only `dlopen`s the binding when a `Database` is
+ * constructed, so requiring it succeeds even when the binding is unloadable. The check has to
+ * open something.
+ *
+ * It must also go through `nativeBinding`. node_modules deliberately holds the Node-ABI build
+ * so the test suite runs, while the app loads its own Electron-ABI copy from beside the tree;
+ * inspecting node_modules would condemn a perfectly working install.
  */
 export function detectNativeModules(
-  load: () => unknown = () => nodeRequire(NATIVE_MODULE),
+  nativeBinding = '',
+  load: (binding: string) => unknown = (binding) => {
+    const Database = nodeRequire(NATIVE_MODULE) as new (path: string, opts?: unknown) => { close(): void };
+    const db = binding ? new Database(':memory:', { nativeBinding: binding }) : new Database(':memory:');
+    db.close();
+    return db;
+  },
 ): PrerequisiteStatus {
   const searchedPaths: string[] = [];
+  if (nativeBinding) searchedPaths.push(nativeBinding);
   try {
     searchedPaths.push(nodeRequire.resolve(NATIVE_MODULE));
   } catch {
@@ -288,7 +300,7 @@ export function detectNativeModules(
   }
 
   try {
-    load();
+    load(nativeBinding);
     return {
       id: 'native-modules',
       severity: 'blocking',

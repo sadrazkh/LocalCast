@@ -15,4 +15,13 @@ export interface PreflightContext {
   repoRoot: string;
   /** `vendor/bin` in development, `resources/vendor` when packaged. */
   vendorDir: string;
+  /**
+   * The `better_sqlite3.node` the app will actually load, or '' to use node_modules.
+   *
+   * The check has to open a database through this exact path. node_modules deliberately
+   * holds the Node-ABI build so the test suite works, and the app loads its own Electron-ABI
+   * copy from beside the tree — so a detector that inspected node_modules would condemn a
+   * perfectly working install.
+   */
+  nativeBinding: string;
 }

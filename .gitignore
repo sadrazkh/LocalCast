@@ -36,3 +36,6 @@ packages/*/dist/
 
 # The Electron-ABI copy of better_sqlite3, produced by scripts/rebuild-native.mjs
 vendor/native/
+
+# Go module cache and local toolchain scratch
+.localtmp/

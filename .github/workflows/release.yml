@@ -1,0 +1,134 @@
+name: Release
+
+# A tag is the trigger, so cutting a release is `git tag v0.2.0 && git push --tags` and
+# nothing else. Everything a user installs is produced here rather than on somebody's laptop,
+# which is the only way the installer and the tag can be trusted to match.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Lets a maintainer rehearse the whole pipeline without inventing a throwaway tag. It
+  # builds and uploads artifacts but does not publish a release.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Electron and Windows printing are the product. Nothing here cross-builds for Linux.
+  NODE_VERSION: '22'
+  GO_VERSION: '1.27'
+
+jobs:
+  release:
+    # Windows, not a matrix: `electron-builder --win nsis` needs a Windows host, netedge is
+    # built for windows/amd64, and the print path is Windows-only by design. A Linux runner
+    # would produce artifacts nobody can install.
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # release notes are generated from history
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: native/netedge/go.sum
+
+      # `npm ci` runs the root postinstall, which builds better-sqlite3 for Electron's ABI
+      # into vendor/native and restores the Node build in node_modules. Both are needed: the
+      # app loads the first, the test suite loads the second.
+      - name: Install dependencies
+        run: npm ci
+
+      # Before anything is packaged. netedge is the whole of remote access, so a release that
+      # ships without it installs fine and then cannot reach anything.
+      - name: Build netedge
+        run: npm run netedge:build
+
+      - name: Test netedge
+        working-directory: native/netedge
+        run: go test ./...
+
+      - name: Build workspaces
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Fail here rather than in an installer. electron-builder answers a missing
+      # extraResources source with one warning in a long log and then produces a package with
+      # the piece silently absent.
+      - name: Verify packaging inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in native/netedge/netedge.exe apps/pwa/dist/index.html; do
+            if [ ! -e "$f" ]; then echo "::error::$f is missing"; missing=1; fi
+          done
+          if ! ls vendor/native/electron-*/better_sqlite3.node >/dev/null 2>&1; then
+            echo "::error::no better_sqlite3 built for Electron's ABI"
+            missing=1
+          fi
+          # SumatraPDF is deliberately not fetched: it has no published checksum, and this
+          # pipeline will not install a binary it cannot verify. The release notes say so.
+          if [ ! -e vendor/bin/SumatraPDF.exe ]; then
+            echo "::warning::SumatraPDF.exe absent — this release cannot print. See vendor/README.md"
+          fi
+          exit $missing
+
+      - name: Package the server app
+        run: npm run package --workspace=@localcast/desktop
+
+      - name: Package the client app
+        run: npm run package --workspace=@localcast/desktop-client
+
+      # One directory, one checksum file. A release whose files cannot be verified is the
+      # same problem this project refuses everywhere else.
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          find apps/desktop/release apps/desktop-client/release -maxdepth 1 -name '*.exe' -exec cp {} dist-release/ \;
+          cp native/netedge/netedge.exe dist-release/
+          ( cd apps/pwa/dist && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist-release/localcast-pwa.zip" . )
+          cd dist-release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: localcast-${{ github.ref_name }}
+          path: dist-release/
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: dist-release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Verify what you downloaded against `SHA256SUMS` before installing:
+
+            ```powershell
+            Get-FileHash .\LocalCast-Setup.exe -Algorithm SHA256
+            ```
+
+            **Printing is not included.** SumatraPDF publishes no checksum, so this pipeline
+            does not bundle it — a binary it cannot verify is one it will not ship. Everything
+            else works; print jobs report that the helper is missing rather than pretending to
+            queue. See `vendor/README.md` to add it to a local build.

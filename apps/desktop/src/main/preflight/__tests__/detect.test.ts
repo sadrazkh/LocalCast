@@ -32,7 +32,7 @@ describe('native module diagnosis', () => {
   });
 
   it('offers the electron-rebuild command for a mismatched module', () => {
-    const status = detectNativeModules(() => {
+    const status = detectNativeModules('', () => {
       throw ABI_ERROR;
     });
 
@@ -44,7 +44,7 @@ describe('native module diagnosis', () => {
   });
 
   it('classifies a module that is not installed as missing, not broken', () => {
-    const status = detectNativeModules(() => {
+    const status = detectNativeModules('', () => {
       throw Object.assign(new Error("Cannot find module 'better-sqlite3'"), {
         code: 'MODULE_NOT_FOUND',
       });

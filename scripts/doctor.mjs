@@ -8,10 +8,10 @@
  * Exits non-zero when something blocking is missing, so CI and `&&` chains notice.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installedElectronVersion, nativeStatus } from './rebuild-native.mjs';
+import { existsSync } from 'node:fs';
+import { electronBindingPath, installedElectronVersion, nativeStatus } from './rebuild-native.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const checks = [];
@@ -51,19 +51,28 @@ const electron = installedElectronVersion();
 if (!electron) {
   report('blocking', 'dependencies', 'node_modules/electron is missing', 'npm install');
 } else {
+  // What matters is the Electron-ABI copy beside the tree, not the one in node_modules.
+  // node_modules is deliberately left on Node's ABI so the test suite runs; the app loads its
+  // own copy through better-sqlite3's nativeBinding option. Judging node_modules would
+  // condemn a working install and send the user to run a rebuild that undoes nothing.
   for (const mod of nativeStatus()) {
     if (mod.file === null) {
       report('blocking', mod.name, 'no compiled binding', 'npm install');
-    } else if (mod.wanted === null) {
+      continue;
+    }
+    if (mod.wanted === null) {
       report('ok', mod.name, `built for ABI ${mod.abi}; Electron's ABI could not be resolved`);
-    } else if (mod.abi === mod.wanted) {
-      report('ok', mod.name, `built for Electron ${electron} (ABI ${mod.wanted})`);
+      continue;
+    }
+    const sideCopy = electronBindingPath(mod.wanted);
+    if (existsSync(sideCopy)) {
+      report('ok', mod.name, `Electron ${electron} binding present (ABI ${mod.wanted}); node_modules on ABI ${mod.abi} for tests`);
     } else {
       report(
         'blocking',
         mod.name,
-        `built for ABI ${mod.abi}, Electron ${electron} requires ${mod.wanted} — ` +
-          'the app will die with "NODE_MODULE_VERSION" at its first database call',
+        `no Electron ${electron} binding (ABI ${mod.wanted}) — the app will die with ` +
+          '"NODE_MODULE_VERSION" at its first database call',
         'npm run rebuild:native',
       );
     }

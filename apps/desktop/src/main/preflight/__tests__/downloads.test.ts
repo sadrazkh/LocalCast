@@ -51,7 +51,7 @@ describe('installFromSpec', () => {
 
   beforeEach(async () => {
     vendorDir = await mkdtemp(join(tmpdir(), 'localcast-preflight-'));
-    ctx = { appRoot: vendorDir, resourcesPath: vendorDir, repoRoot: vendorDir, vendorDir };
+    ctx = { appRoot: vendorDir, resourcesPath: vendorDir, repoRoot: vendorDir, vendorDir, nativeBinding: '' };
   });
 
   afterEach(async () => {
