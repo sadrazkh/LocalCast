@@ -64,11 +64,17 @@ export class UploadManager {
     const created: UploadJob[] = [];
     for (const sourcePath of input.sourcePaths) {
       let totalBytes = 0;
+      let readable = true;
       try {
         totalBytes = (await stat(sourcePath)).size;
       } catch {
         // A file that vanished between the picker closing and this call is reported as a
         // failed row rather than silently skipped, so the count the user sees still matches.
+        // It fails *here*, before any request: opening an upload session on somebody else's
+        // server for a file this machine cannot read would leave a stranded session there
+        // and then report it as "the server did not accept the whole file", which blames the
+        // wrong end.
+        readable = false;
       }
       this.#sequence += 1;
       const job: UploadJob = {
@@ -81,17 +87,19 @@ export class UploadManager {
         sourcePath,
         sentBytes: 0,
         totalBytes,
-        status: 'queued',
-        errorCode: null,
-        errorMessage: null,
+        status: readable ? 'queued' : 'error',
+        errorCode: readable ? null : ErrorCode.NOT_FOUND,
+        errorMessage: readable ? null : 'this file could not be read from this machine',
         createdAt: this.#clock.now(),
-        finishedAt: null,
+        finishedAt: readable ? null : this.#clock.now(),
       };
       this.#jobs.set(job.id, job);
       created.push(job);
     }
     this.#emit();
-    for (const job of created) void this.#run(job.id);
+    for (const job of created) {
+      if (job.status === 'queued') void this.#run(job.id);
+    }
     return created;
   }
 
@@ -168,9 +176,22 @@ export class UploadManager {
         const offset = session.receivedBytes;
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
         if (bytesRead === 0) break;
-        session = await api.patchUpload(session.id, offset, buffer.subarray(0, bytesRead), {
+        const next = await api.patchUpload(session.id, offset, buffer.subarray(0, bytesRead), {
           signal,
         });
+        // A PATCH the server accepted but did not count leaves the offset exactly where it
+        // was, and the loop condition is written in terms of that offset — so without this
+        // the next iteration re-reads the same bytes and sends them again, for ever, at the
+        // speed of the link. Stopping is the only honest answer: the server is not applying
+        // what it is being sent.
+        if (next.receivedBytes <= offset) {
+          throw new LocalCastError(
+            ErrorCode.UPLOAD_OFFSET_MISMATCH,
+            'the server did not move past this chunk',
+            { detail: { offset, received: next.receivedBytes } },
+          );
+        }
+        session = next;
         this.#update(jobId, { sentBytes: session.receivedBytes });
       }
     } finally {

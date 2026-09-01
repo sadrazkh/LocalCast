@@ -1,4 +1,5 @@
 import { API_PREFIX } from '@localcast/contract';
+import type { StoredSession } from '@localcast/client-core';
 import type { ClientHub } from './hub.js';
 
 /**
@@ -39,9 +40,20 @@ export function attachMediaAuthorization(webRequest: MediaAuthWebRequest, hub: C
       callback({ requestHeaders: details.requestHeaders });
       return;
     }
-    void hub
-      .client(serverId)
-      .session.ensureFresh()
+
+    // `client()` throws when the row has gone — the user removed the server while its video
+    // was still playing. Every path out of this listener has to call `callback`: Electron
+    // holds the request until it does, so a throw here is not a failed request but a frozen
+    // one, and the window that issued it never finds out why.
+    let pending: Promise<StoredSession | null>;
+    try {
+      pending = hub.client(serverId).session.ensureFresh();
+    } catch {
+      callback({ requestHeaders: details.requestHeaders });
+      return;
+    }
+
+    void pending
       .then((session) => {
         if (session === null) {
           callback({ requestHeaders: details.requestHeaders });

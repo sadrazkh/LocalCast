@@ -71,6 +71,9 @@ export const PART_SUFFIX = '.lcpart';
 /** Progress is persisted and broadcast at most this often; a 4K file writes constantly. */
 const PROGRESS_INTERVAL_MS = 400;
 
+/** The statuses whose byte count still lives in a `.lcpart` file rather than in the record. */
+const RESUMABLE: ReadonlySet<string> = new Set(['paused', 'error']);
+
 interface Running {
   controller: AbortController;
   /** Set when the user pressed pause, so the abort is not reported as a failure. */
@@ -120,10 +123,18 @@ export class DownloadManager {
       const parsed = JSON.parse(raw) as { jobs?: DownloadJob[] };
       for (const job of parsed.jobs ?? []) {
         if (typeof job?.id !== 'string') continue;
+        const status =
+          job.status === 'downloading' || job.status === 'queued' ? 'paused' : job.status;
         const restored: DownloadJob = {
           ...job,
-          status: job.status === 'downloading' || job.status === 'queued' ? 'paused' : job.status,
-          receivedBytes: bytesOnDisk(partPathFor(job.destination)),
+          status,
+          // Only a job that can still be resumed takes its count from the partial file. A
+          // finished one has no `.lcpart` left — re-`stat`ing it would report zero bytes
+          // received for a film that is sitting complete in the downloads folder, which is
+          // the same row a genuinely empty transfer would show.
+          receivedBytes: RESUMABLE.has(status)
+            ? bytesOnDisk(partPathFor(job.destination))
+            : numberOr(job.receivedBytes, 0),
         };
         this.#jobs.set(restored.id, restored);
       }
@@ -188,6 +199,10 @@ export class DownloadManager {
     const job = this.#jobs.get(jobId);
     if (job === undefined) throw new UnknownDownload(jobId);
     if (job.status === 'downloading' || job.status === 'queued') return job;
+    // A finished row has already been renamed into place. Re-running it would fetch the file
+    // a second time and rename over the copy the user has — the destination was chosen when
+    // the job was queued and is not re-derived here.
+    if (job.status === 'done') return job;
     // Re-`stat` before re-queuing so the row shows the truth immediately, not the number the
     // record happened to hold when the app was last closed.
     const updated = this.#update(job.id, {
@@ -321,10 +336,32 @@ export class DownloadManager {
       );
     }
 
-    // A 200 in answer to a Range request means the server served the whole file: the partial
-    // copy is not a prefix of what is arriving, so keeping it would corrupt the result.
-    if (response.status === 200 && offset > 0) {
+    // Where the bytes about to arrive actually start. A 200 always means "from zero, the
+    // whole file"; a 206 says so in `Content-Range`, and a 206 without one is taken at its
+    // word because there is nothing else to go on.
+    //
+    // This is checked rather than assumed because appending at the wrong place is silent:
+    // the file ends up the right size and the wrong content, and nobody finds out until
+    // somebody tries to play it. A proxy that answers a ranged request with the whole file
+    // under a 206, or with a slice starting somewhere else, is not a hypothetical — it is
+    // the same class of mistake the server's own Range code had to be fixed for.
+    const servedFrom =
+      response.status === 200
+        ? 0
+        : (startFromContentRange(response.headers['content-range']) ?? offset);
+
+    if (servedFrom !== offset) {
+      // The partial copy is not a prefix of what is arriving, so keeping it would corrupt
+      // the result. Starting from the top is recoverable; starting from the middle of a file
+      // whose head we do not have is not.
       rmSync(partPath, { force: true });
+      if (servedFrom !== 0) {
+        throw new LocalCastError(
+          ErrorCode.RANGE_NOT_SATISFIABLE,
+          'the server answered with a different part of the file than the one that was asked for',
+          { status: response.status, detail: { requested: offset, served: servedFrom } },
+        );
+      }
       offset = 0;
       this.#update(jobId, { receivedBytes: 0 });
     }
@@ -387,9 +424,24 @@ export class DownloadManager {
   // ─── bookkeeping ────────────────────────────────────────────────────────────
 
   #destinationFor(fileName: string): string {
-    const safe = basename(fileName).replace(/[\\/:*?"<>|]/g, '_') || 'download';
+    const safe = safeFileName(fileName);
+
+    // A row queued a moment ago has no bytes on disk yet, so `existsSync` cannot see it. Two
+    // jobs sharing one `.lcpart` would interleave two downloads into a single corrupt file
+    // and then both rename it into place, which is exactly what happens when the user asks
+    // for the same film from two folders.
+    const claimed = new Set(
+      [...this.#jobs.values()]
+        .filter((job) => job.status !== 'cancelled')
+        .map((job) => job.destination),
+    );
+    const free = (candidate: string): boolean =>
+      !claimed.has(candidate) &&
+      !existsSync(candidate) &&
+      !existsSync(`${candidate}${PART_SUFFIX}`);
+
     let candidate = join(this.#downloadDir, safe);
-    if (!existsSync(candidate) && !existsSync(`${candidate}${PART_SUFFIX}`)) return candidate;
+    if (free(candidate)) return candidate;
 
     // Never overwrite: the user asked to fetch a copy, not to replace whatever is already
     // sitting in their downloads folder under the same name.
@@ -397,7 +449,7 @@ export class DownloadManager {
     const stem = ext.length > 0 ? safe.slice(0, -ext.length) : safe;
     for (let n = 2; n < 1000; n += 1) {
       candidate = join(this.#downloadDir, `${stem} (${n})${ext}`);
-      if (!existsSync(candidate) && !existsSync(`${candidate}${PART_SUFFIX}`)) return candidate;
+      if (free(candidate)) return candidate;
     }
     return join(this.#downloadDir, `${stem} (${Date.now()})${ext}`);
   }
@@ -451,6 +503,22 @@ function bytesOnDisk(path: string): number {
   }
 }
 
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * A file name from a remote index turned into one this machine may write.
+ *
+ * `basename` plus the Windows-illegal set is most of it. The dots-only case is separate
+ * because `basename('..')` is `'..'`, which survives the replacement and would name the
+ * parent of the downloads folder rather than a file inside it.
+ */
+function safeFileName(fileName: string): string {
+  const cleaned = basename(fileName).replace(/[\\/:*?"<>|]/g, '_');
+  return cleaned.length === 0 || /^\.+$/.test(cleaned) ? 'download' : cleaned;
+}
+
 // Reads the total size off a Content-Range: `bytes 100-199/1234` gives 1234, and so does
 // the unsatisfiable form the server sends with a 416, whose range part is a bare asterisk.
 // (Spelled out rather than shown, because the literal token would close this comment.)
@@ -460,6 +528,17 @@ function totalFromContentRange(value: string | undefined): number | null {
   if (match?.[1] === undefined) return null;
   const total = Number(match[1]);
   return Number.isFinite(total) ? total : null;
+}
+
+// The first byte a `Content-Range` describes: `bytes 100-199/1234` gives 100. `null` when
+// the header is absent or carries the unsatisfiable form, whose range part is a bare
+// asterisk and therefore names no starting byte at all.
+function startFromContentRange(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const match = /^\s*bytes\s+(\d+)\s*-/i.exec(value);
+  if (match?.[1] === undefined) return null;
+  const start = Number(match[1]);
+  return Number.isFinite(start) ? start : null;
 }
 
 function sizeFromHeaders(headers: Record<string, string>, offset: number): number | null {

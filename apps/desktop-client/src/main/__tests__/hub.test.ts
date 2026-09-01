@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ErrorCode } from '@localcast/contract';
+import { LocalCastError } from '@localcast/client-core';
 import type { TransportRequest, TransportResponse } from '@localcast/client-core';
 import { ClientHub } from '../hub.js';
 import { ServerRegistry } from '../registry.js';
 import { SessionVault } from '../tokenStore.js';
-import { FakeClock, json, RecordingTransport, reversibleCodec } from './fakes.js';
+import { FakeClock, MemoryLogger, json, RecordingTransport, reversibleCodec } from './fakes.js';
 
 const ALPHA = 'alpha.tail1234.ts.net';
 const BETA = 'beta.tail5678.ts.net';
@@ -177,5 +179,111 @@ describe('ClientHub', () => {
 
   it('refuses an address that cannot hold a certificate', () => {
     expect(() => hub.add('192.168.1.31')).toThrow(/MagicDNS/);
+  });
+
+  it('leaves the row unpaired and stores nothing when the operator says no', async () => {
+    // One server, and its pairing poll comes back rejected rather than approved.
+    const refusing = new RecordingTransport((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/pair/claim') {
+        return json(200, { deviceId: 'dev-a', claimTicket: 'ticket-a', status: 'pending' });
+      }
+      if (path === '/api/v1/pair/status/dev-a') return json(200, { status: 'rejected' });
+      return undefined;
+    });
+    const refusingVault = new SessionVault(join(dir, 'refused.json'), reversibleCodec);
+    const refusingHub = new ClientHub({
+      registry: new ServerRegistry(join(dir, 'refused-servers.json')),
+      vault: refusingVault,
+      transport: refusing,
+      clock,
+      deviceName: 'test-pc',
+    });
+    const server = refusingHub.add(ALPHA);
+
+    const error = await refusingHub.pair(server.id, 'A1B2').catch((cause: unknown) => cause);
+
+    // A contract code, so the dialog can say «کد پذیرفته نشد» rather than showing prose the
+    // server wrote. `ipc.ts` turns exactly this into a `PairResult` the renderer can read.
+    expect(error).toBeInstanceOf(LocalCastError);
+    expect((error as LocalCastError).code).toBe(ErrorCode.PAIRING_INVALID);
+    expect(refusingVault.pairedServerIds()).toEqual([]);
+    expect(refusingHub.summary(server.id).state).toBe('needs-pairing');
+    await refusingHub.stopAll();
+  });
+
+  it('takes only the removed server’s session with it', async () => {
+    const alpha = hub.add(ALPHA);
+    const beta = hub.add(BETA);
+    await hub.pair(alpha.id, 'A1B2');
+    await hub.pair(beta.id, 'C3D4');
+
+    await hub.remove(alpha.id);
+
+    expect(hub.summaries().map((server) => server.id)).toEqual([beta.id]);
+    expect(vault.read(alpha.id)).toBeNull();
+    // The neighbour is untouched: one file holds both, and a removal that rewrote the whole
+    // thing carelessly would sign the other household's server out at the same time.
+    expect(vault.read(beta.id)?.accessToken).toBe('access-b');
+    expect(hub.summary(beta.id).deviceId).toBe('dev-b');
+  });
+
+  it('sends a revoked device back to pairing with a code, and no token in the log', async () => {
+    const logger = new MemoryLogger();
+    let revoked = false;
+    const closing = new RecordingTransport((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/pair/claim') {
+        return json(200, { deviceId: 'dev-a', claimTicket: 'ticket-a', status: 'pending' });
+      }
+      if (path === '/api/v1/pair/status/dev-a') {
+        return json(200, {
+          status: 'approved',
+          accessToken: 'access-a',
+          refreshToken: 'refresh-a',
+          expiresAt: clock.now() + 3_600_000,
+          davPassword: 'dav-a',
+          device: { id: 'dev-a', name: 'test-pc' },
+        });
+      }
+      if (path === '/api/v1/me' && revoked) {
+        return json(403, {
+          error: { code: 'device_revoked', message: 'this device was closed by the operator' },
+        });
+      }
+      if (path === '/api/v1/me') {
+        return json(200, {
+          device: { id: 'dev-a', name: 'test-pc', platform: 'windows', pairedAt: 1 },
+          server: { name: ALPHA, version: '0.1.0', host: ALPHA },
+          permissions: [],
+        });
+      }
+      return undefined;
+    });
+    const closingVault = new SessionVault(join(dir, 'closed.json'), reversibleCodec);
+    const closingHub = new ClientHub({
+      registry: new ServerRegistry(join(dir, 'closed-servers.json')),
+      vault: closingVault,
+      transport: closing,
+      clock,
+      logger,
+      deviceName: 'test-pc',
+    });
+    const server = closingHub.add(ALPHA);
+    await closingHub.pair(server.id, 'A1B2');
+    expect(closingHub.summary(server.id).state).toBe('paired');
+
+    revoked = true;
+    const after = await closingHub.connect(server.id);
+
+    // «نیاز به جفت‌سازی», not a red dot: one is fixed by asking the operator to approve this
+    // machine again, the other by turning the other machine on.
+    expect(after.state).toBe('needs-pairing');
+    expect(after.lastErrorCode).toBe(ErrorCode.DEVICE_REVOKED);
+    expect(closingVault.read(server.id)).toBeNull();
+    expect(logger.text()).not.toContain('access-a');
+    expect(logger.text()).not.toContain('refresh-a');
+    expect(logger.text()).not.toContain('dav-a');
+    await closingHub.stopAll();
   });
 });
