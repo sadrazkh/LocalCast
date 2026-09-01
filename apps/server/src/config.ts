@@ -104,6 +104,20 @@ export type ServerConfigOverrides = Partial<Omit<ServerConfig, 'jwtSecret'>> & {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Fixed ports, not ephemeral ones.
+ *
+ * An address a person types into a phone, or reads off a QR code, has to be the same address
+ * tomorrow. With an OS-assigned port the machine answered on 58410 one run and 61233 the next,
+ * so nothing written down ever worked twice — which is most of why pairing appeared to be
+ * broken rather than merely inconvenient.
+ *
+ * 8420 is the port the original design drew on its own screens. If it is taken the listener
+ * says so and stops, rather than silently moving somewhere nobody will look.
+ */
+export const DEFAULT_LAN_PORT = 8420;
+export const DEFAULT_LAN_PLAINTEXT_PORT = 8421;
+
 function defaultDataDir(): string {
   const local = process.env['LOCALAPPDATA'];
   if (local) return path.join(local, 'LocalCast');
@@ -136,12 +150,12 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     webRoot: overrides.webRoot ?? '',
     nativeBinding: overrides.nativeBinding ?? '',
     lan: overrides.lan ?? false,
-    lanPort: overrides.lanPort ?? 0,
+    lanPort: overrides.lanPort ?? DEFAULT_LAN_PORT,
     lanHosts: overrides.lanHosts ?? [],
     // Default false, and deliberately not derived from `lan`: sharing over the local network
     // must never imply sharing it unencrypted.
     lanPlaintext: overrides.lanPlaintext ?? false,
-    lanPlaintextPort: overrides.lanPlaintextPort ?? 0,
+    lanPlaintextPort: overrides.lanPlaintextPort ?? DEFAULT_LAN_PLAINTEXT_PORT,
     logLevel: overrides.logLevel ?? 'info',
   };
 }

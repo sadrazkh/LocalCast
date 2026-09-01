@@ -12,7 +12,6 @@ import {
   SettingsIcon,
   Spinner,
   cx,
-  edgeStateToConnection,
   formatDuration,
   useFormat,
   useT,
@@ -22,7 +21,8 @@ import { doingKey } from '../lib/activity.js';
 import { getApi, listActivity, listDevices, listFolders, qrPayloadOf } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
 import { messageOf, useAsync } from '../lib/useAsync.js';
-import { isServing, useShell } from '../state/shell.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
+import { connectionOf, isServerOn, serverAddress, useShell } from '../state/shell.js';
 import styles from './TrayApp.module.css';
 
 const TTL_SECONDS = 300;
@@ -46,13 +46,15 @@ export function TrayApp() {
   const t = useT();
   const c = useCopy();
   const format = useFormat();
-  const { status, connectedSince } = useShell();
+  const { status, info, connectedSince } = useShell();
   const [view, setView] = useState<View>('home');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  const serving = isServing(status);
+  // The local server, not the sidecar, while remote access is switched off — otherwise this
+  // popover reports «سرور خاموش است» over a server that is serving. See `isServerOn`.
+  const serving = isServerOn(status, info);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -80,7 +82,7 @@ export function TrayApp() {
         </span>
         {/* A dot and a word. No address, no relay, no protocol — the address is its own
             labelled field below, where it can be read and copied. */}
-        <ConnectionDot state={edgeStateToConnection(status?.state ?? 'starting')} size="sm" />
+        <ConnectionDot state={connectionOf(status, info)} size="sm" />
       </header>
 
       <div className={styles.body}>
@@ -147,10 +149,15 @@ function ServerOn({ now, connectedSince }: { now: number; connectedSince: number
   const c = useCopy();
   const t = useT();
   const format = useFormat();
-  const { status } = useShell();
+  const { status, info } = useShell();
   const devices = useAsync(listDevices, []);
   const activity = useAsync(() => listActivity(60), []);
-  const config = useAsync(() => getApi().edge.getConfig(), []);
+  // Which coordination server is in use is a remote-access fact, and asking for it means an
+  // IPC round trip to a sidecar that is not running.
+  const config = useAsync(
+    async () => (REMOTE_ACCESS_ENABLED ? getApi().edge.getConfig() : null),
+    [],
+  );
 
   // The most recent activity entry per device is the only per-device signal the API carries;
   // there is no "currently streaming" endpoint. A device with nothing recent is «بی‌کار»,
@@ -178,15 +185,17 @@ function ServerOn({ now, connectedSince }: { now: number; connectedSince: number
         <div className={styles.fact}>
           <dt>{c('shell.address')}</dt>
           <dd>
-            <AddressField host={status?.host ?? null} label="" />
+            <AddressField host={serverAddress(status, info)} label="" />
           </dd>
         </div>
-        <div className={styles.fact}>
-          <dt>{c('tray.network')}</dt>
-          <dd>
-            {config.data?.mode === 'custom' ? c('tray.networkCustom') : c('tray.networkDefault')}
-          </dd>
-        </div>
+        {REMOTE_ACCESS_ENABLED ? (
+          <div className={styles.fact}>
+            <dt>{c('tray.network')}</dt>
+            <dd>
+              {config.data?.mode === 'custom' ? c('tray.networkCustom') : c('tray.networkDefault')}
+            </dd>
+          </div>
+        ) : null}
         <div className={styles.fact}>
           <dt>{c('tray.uptime')}</dt>
           <dd className={styles.latin}>
@@ -246,9 +255,17 @@ function ServerOff({
           {error}
         </p>
       ) : null}
-      <Button variant="primary" fullWidth loading={busy} onClick={onStart}>
-        {c('tray.turnOn')}
-      </Button>
+      {/*
+        The button starts the *sidecar*. With remote access switched off there is nothing for
+        it to start — the local server is started by the app itself — so it would be a button
+        whose only possible outcome is an error message. The sentence above it still holds:
+        paired devices come back on their own.
+      */}
+      {REMOTE_ACCESS_ENABLED ? (
+        <Button variant="primary" fullWidth loading={busy} onClick={onStart}>
+          {c('tray.turnOn')}
+        </Button>
+      ) : null}
     </div>
   );
 }

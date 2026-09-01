@@ -23,6 +23,13 @@ npm start       # builds everything and launches the desktop app
 Only 3 needs anything installed that most people do not already have, and it is the one that
 matters most.
 
+> **Printing is switched off in this build, so §4 does not apply right now.** Nothing has been
+> deleted — the print module and its tests are all still here — and neither `npm run doctor`
+> nor the prerequisites screen will ask for SumatraPDF while it is off. To bring it back, set
+> `PRINTING_ENABLED` to `true` in all three of `apps/server/src/modules/features.ts`,
+> `apps/desktop/src/shared/features.ts` and `scripts/features.mjs`, then rebuild. Everything
+> §4 says below is accurate for that moment.
+
 ---
 
 ## 1. Node 22 or newer, and npm

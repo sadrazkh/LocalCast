@@ -49,6 +49,8 @@ export interface MintResult {
   id: string;
   code: string;
   qr: QrPayload;
+  /** The URL the QR image encodes, or null when there is no local address to publish. */
+  link: string | null;
   expiresAt: number;
 }
 
@@ -168,6 +170,19 @@ export class PairingService {
         secret,
         ...(lan === null ? {} : { url: lan.url, fp: lan.fingerprint256 }),
       },
+      /**
+       * What the QR image actually encodes, when there is a local address to encode.
+       *
+       * A link, not the payload above. The payload is JSON, and a phone's camera app does
+       * nothing with JSON — so the old code could only be read by LocalCast's own scanner,
+       * which needs the camera, which needs a secure context. Scanning was impossible before
+       * pairing and pairing needed scanning.
+       *
+       * As a link the camera opens the web app at the right address and the app reads the
+       * code and secret out of the fragment. The fragment never reaches the server and never
+       * enters a log, which is where a secret with a five-minute life belongs.
+       */
+      link: lan === null ? null : `${lan.url}/#p=${code}.${secret}`,
       expiresAt,
     };
   }

@@ -15,24 +15,42 @@ import { PreflightStep } from '../preflight/PreflightStep.js';
 import { getApi, qrPayloadOf } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
 import { messageOf } from '../lib/useAsync.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import { isServing, useShell } from '../state/shell.js';
 import styles from './Wizard.module.css';
 
 /**
- * First run, in three steps: pick a folder, sign in once, add the first device.
+ * First run: pick a folder, then add the first device. With remote access switched on there
+ * is a sign-in between the two.
  *
  * The rule that shapes every string on this screen: **the person doing this has not
  * configured a network and never should have to.** There is no mode, no control server, no
  * address, no certificate and no port anywhere in the copy, and a test scans the rendered
  * text to keep it that way — the promise is the product, not a nicety.
  *
- * Step two has no "next" button on purpose. The wizard moves on when the edge status
+ * The sign-in step has no "next" button on purpose. The wizard moves on when the edge status
  * actually reports `connected`, so it can never march ahead of a sign-in that silently
  * failed in the browser and leave the user staring at a QR code for a server nothing can
- * reach.
+ * reach. That gate is also why it cannot simply be *skipped* while remote access is off: with
+ * the sidecar never started the status would never reach `connected`, and the step would be a
+ * dead end. It is taken out of the sequence instead — see `STEPS` — and left in this file,
+ * whole, for the day the flag comes back.
  */
 
-const TOTAL_STEPS = 3;
+/**
+ * The steps, in order, for the build we are in.
+ *
+ * Derived from the flag rather than written twice: the label ("step 1 of 2"), the dots and
+ * the branches below all count the same array, so a step that is switched off cannot leave
+ * the count claiming a step the user will never see.
+ */
+const STEPS = REMOTE_ACCESS_ENABLED
+  ? (['folder', 'sign-in', 'pairing'] as const)
+  : (['folder', 'pairing'] as const);
+
+type WizardStep = (typeof STEPS)[number];
+
+const TOTAL_STEPS = STEPS.length;
 
 export function Wizard() {
   const [step, setStep] = useState(0);
@@ -40,11 +58,14 @@ export function Wizard() {
   /**
    * The prerequisites screen sits ahead of step one and clears itself the moment it has
    * nothing to report — including on the first render, so a user with everything in place
-   * never sees it. Counting "step 1 of 3" while a piece of the app is missing would be
+   * never sees it. Counting "step 1 of 2" while a piece of the app is missing would be
    * counting the wrong thing, which is why the dots do not appear until this is cleared.
    */
   const [prerequisitesCleared, setPrerequisitesCleared] = useState(false);
   const clearPrerequisites = useCallback(() => setPrerequisitesCleared(true), []);
+
+  const current: WizardStep = STEPS[Math.min(step, TOTAL_STEPS - 1)] ?? STEPS[0];
+  const advance = () => setStep((index) => Math.min(index + 1, TOTAL_STEPS - 1));
 
   return (
     <div className={styles.window}>
@@ -53,16 +74,16 @@ export function Wizard() {
         {prerequisitesCleared ? (
           <>
             <StepDots current={step} />
-            {step === 0 ? (
+            {current === 'folder' ? (
               <FolderStep
                 onDone={(id) => {
                   setFolderId(id);
-                  setStep(1);
+                  advance();
                 }}
               />
             ) : null}
-            {step === 1 ? <SignInStep onConnected={() => setStep(2)} /> : null}
-            {step === 2 ? <PairingStep folderId={folderId} /> : null}
+            {current === 'sign-in' ? <SignInStep onConnected={advance} /> : null}
+            {current === 'pairing' ? <PairingStep folderId={folderId} /> : null}
           </>
         ) : (
           <PreflightStep onDone={clearPrerequisites} />
@@ -231,7 +252,7 @@ function SignInStep({ onConnected }: { onConnected: () => void }) {
   );
 }
 
-// ─── step 3: the first device ─────────────────────────────────────────────────
+// ─── last step: the first device ──────────────────────────────────────────────
 
 interface Minted {
   code: string;
@@ -286,10 +307,23 @@ function PairingStep({ folderId }: { folderId: string | null }) {
   return (
     <section className={styles.step}>
       <h1 className={styles.title}>{c('wizard.qrTitle')}</h1>
-      <p className={styles.lede}>{c('wizard.qrBody')}</p>
+      <p className={styles.lede}>
+        {/*
+          Nothing has been signed into by the time this screen appears, so the last step says
+          what is actually true of the connection it is about to make: the phone reaches this
+          computer because both are on the same Wi-Fi. With remote access switched on there is
+          no such condition, and the sentence would be wrong.
+        */}
+        {REMOTE_ACCESS_ENABLED ? c('wizard.qrBody') : c('wizard.qrBodyLocal')}
+      </p>
 
       <div className={styles.pairing}>
-        <QrFrame size={196} prompt={c('wizard.qrBody')} error={error ?? undefined}>
+        {/*
+          No `prompt`: it sits directly under the frame and was being handed the same sentence
+          as the lede above it, so the screen said the same thing twice. The frame's own
+          default is a short caption, which is what that spot is for.
+        */}
+        <QrFrame size={196} error={error ?? undefined}>
           {minted ? <img className={styles.qr} src={minted.dataUrl} alt="" /> : null}
         </QrFrame>
 

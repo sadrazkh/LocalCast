@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AppConfigStore, configPathFor } from '../appConfig.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
+import { AppConfigStore, configPathFor, remoteAccessOn } from '../appConfig.js';
 
 /**
  * The two switches that decide what LocalCast is on a fresh machine.
@@ -77,5 +78,29 @@ describe('turning remote access on', () => {
     // The two are independent. Reaching the machine from elsewhere must not cost the thing
     // that works without an account.
     expect(store.update({ remoteAccess: true }).shareOnLan).toBe(true);
+  });
+
+  /**
+   * The build switch and the stored preference are two different things, and the difference
+   * is what makes this a switch rather than a migration: while the feature is off the answer
+   * is no whatever the file says, and the file still says what the user said.
+   */
+  it('is still answered "no" while the feature is switched off in the build', () => {
+    const dir = freshDir();
+    const store = new AppConfigStore(configPathFor(dir));
+    const config = store.update({ remoteAccess: true });
+
+    // The preference survives, exactly as written…
+    expect(config.remoteAccess).toBe(true);
+    expect(new AppConfigStore(configPathFor(dir)).get().remoteAccess).toBe(true);
+    // …and the one function that decides whether anything starts follows the build switch.
+    expect(remoteAccessOn(config)).toBe(REMOTE_ACCESS_ENABLED);
+  });
+
+  it('is answered "no" when the user has not asked for it, whatever the build says', () => {
+    const config = new AppConfigStore(configPathFor(freshDir())).get();
+    // The gate is an AND, not an override in both directions: switching the feature back on
+    // must not enable remote access for someone who never asked for it.
+    expect(remoteAccessOn(config)).toBe(false);
   });
 });

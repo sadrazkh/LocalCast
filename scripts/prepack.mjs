@@ -15,6 +15,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PRINTING_ENABLED } from './features.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -61,13 +62,22 @@ const artefacts = [
       '  network — no tailnet, no TLS, no remote client at all.\n' +
       '  Build it with: npm run netedge:build   (needs Go 1.23+)',
   },
-  {
-    path: join(vendorBin, 'SumatraPDF.exe'),
-    missing:
-      'SumatraPDF.exe is not in vendor/bin. This installer will not be able to print;\n' +
-      '  print jobs fail with a message saying the helper is missing.\n' +
-      '  See vendor/README.md.',
-  },
+  // Printing is switched off in this build (scripts/features.mjs), so a missing SumatraPDF is
+  // not a missing part: warning that "this installer will not be able to print" while nothing
+  // in it offers printing is the false alarm that teaches people to skim this banner. The entry
+  // is conditional rather than deleted — the switch is temporary and this warning is correct
+  // the moment printing comes back.
+  ...(PRINTING_ENABLED
+    ? [
+        {
+          path: join(vendorBin, 'SumatraPDF.exe'),
+          missing:
+            'SumatraPDF.exe is not in vendor/bin. This installer will not be able to print;\n' +
+            '  print jobs fail with a message saying the helper is missing.\n' +
+            '  See vendor/README.md.',
+        },
+      ]
+    : []),
   {
     path: join(ROOT, 'apps', 'pwa', 'dist', 'index.html'),
     missing:
@@ -83,6 +93,8 @@ if (absent.length > 0) {
   for (const a of absent) console.warn(`\n  ${a.missing}`);
   console.warn('\n  npm run doctor explains all of this.');
   console.warn('────────────────────────────────────────────────────────────────\n');
-} else {
+} else if (PRINTING_ENABLED) {
   console.log('prepack: netedge, the print helper and the built PWA are all present.');
+} else {
+  console.log('prepack: netedge and the built PWA are present; printing is switched off.');
 }

@@ -37,12 +37,54 @@ export function isPairableHost(host: string): boolean {
 }
 
 /**
+ * Reads a pairing URL: `http://192.168.1.24:8420/#p=CODE.SECRET`.
+ *
+ * The fragment, not the query, and that is deliberate: a fragment is never sent to the server
+ * and never appears in a server log, so the pairing secret does not end up written down
+ * somewhere it outlives the sixty seconds it is meant to exist for.
+ */
+function fromPairingUrl(text: string): QrPayload {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw invalid('the scanned code is not a LocalCast pairing link');
+  }
+
+  const fragment = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  const params = new URLSearchParams(fragment);
+  const raw = params.get('p') ?? '';
+  const [code, secret] = raw.split('.');
+
+  if (!code) throw invalid('that link has no pairing code in it');
+
+  return qrPayloadSchema.parse({
+    v: 1,
+    host: url.hostname,
+    code: code.toUpperCase(),
+    ...(secret ? { secret } : {}),
+    url: url.origin,
+  });
+}
+
+/**
  * Validate a scanned QR string. Anything malformed comes out as a typed `pairing_invalid`,
  * never as a `SyntaxError` from `JSON.parse` reaching a camera view.
  */
 export function parseQrPayload(raw: string): QrPayload {
   const text = raw.trim();
   if (text.length === 0) throw invalid('the scanned code was empty');
+
+  // A URL first, because that is what the QR code now carries.
+  //
+  // The code used to be a JSON blob. A phone's own camera app cannot do anything with that —
+  // it is not a link — so scanning it outside LocalCast did nothing at all, and scanning it
+  // inside LocalCast needed the camera, which needs a secure context, which the self-signed
+  // certificate was in the way of. The result was a QR code nothing could read.
+  //
+  // As a URL the camera opens the app, and the app finds the pairing details in the fragment.
+  // The JSON form is still accepted so codes already in circulation keep working.
+  if (/^https?:\/\//i.test(text)) return fromPairingUrl(text);
 
   const parsed = tryParseJson(text);
   if (!parsed.ok) throw invalid('the scanned code is not a LocalCast pairing code');
@@ -56,7 +98,10 @@ export function parseQrPayload(raw: string): QrPayload {
     throw invalid('this pairing code is not one this app understands', { fields });
   }
 
-  if (!isPairableHost(result.data.host)) {
+  // Only when the payload has no explicit origin. `url` is a validated absolute URL and is
+  // the address the client will actually use, so a bare IP there is correct rather than
+  // suspect — `host` is only a fallback spelling for the tailnet name.
+  if (result.data.url === undefined && !isPairableHost(result.data.host)) {
     throw invalid('this pairing code points at an address LocalCast cannot use', {
       fields: ['host'],
     });

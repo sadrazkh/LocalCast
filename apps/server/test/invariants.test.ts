@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { loadConfig } from '../src/config.js';
+import { DEFAULT_LAN_PORT, loadConfig } from '../src/config.js';
 import type { StoredNetworkConfig } from '../src/http/routes/operatorNetwork.js';
 import {
   addFolder,
@@ -46,8 +46,12 @@ describe('the default server configuration', () => {
     // API on the Wi-Fi for every embedder — the CLI, a test, anything that calls loadConfig —
     // rather than only for a desktop whose owner turned the switch on.
     expect(config.lan).toBe(false);
-    expect(config.lanPort).toBe(0);
     expect(config.lanHosts).toEqual([]);
+    // The port is a fixed number rather than an ephemeral one, and that is deliberate: an
+    // address a person types or scans has to be the same tomorrow. It is not part of this
+    // invariant — `lan: false` is. A configured port on a listener that never binds shares
+    // nothing.
+    expect(config.lanPort).toBe(DEFAULT_LAN_PORT);
     // And the listener that does exist stays on loopback, where `netedge` is the only caller.
     expect(config.host).toBe('127.0.0.1');
   });

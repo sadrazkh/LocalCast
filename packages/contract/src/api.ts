@@ -45,8 +45,15 @@ export const qrPayloadSchema = z.object({
   host: z.string().min(1),
   /** Human fallback, 4 chars, unambiguous alphabet. */
   code: z.string().length(4),
-  /** 32 random bytes, base64url. This is what makes the QR unguessable. */
-  secret: z.string().min(32),
+  /**
+   * 32 random bytes, base64url. This is what makes the QR unguessable.
+   *
+   * Optional, because the four-character code typed by hand is a first-class path — the
+   * secret is what protects the *scanned* code, and there is no scanned code to protect when
+   * somebody reads four characters off a screen. `pairClaimRequestSchema` has always treated
+   * it as optional; this is the same rule, written down in the same place.
+   */
+  secret: z.string().min(32).optional(),
   /**
    * The absolute origin to connect to, when it is not simply `https://<host>`.
    *
@@ -273,5 +280,14 @@ export const mintPairingRequestSchema = z.object({
 export const mintPairingResponseSchema = z.object({
   code: z.string().length(4),
   qr: qrPayloadSchema,
+  /**
+   * The URL the QR image encodes, or null when there is no local address to publish.
+   *
+   * This is what a phone's camera opens. It has to be in the response schema or it is
+   * silently dropped between the pairing service and the panel — which is precisely what
+   * happened, and it turned a scannable code back into an unreadable one with nothing in
+   * between reporting a problem.
+   */
+  link: z.string().url().nullable(),
   expiresAt: z.number().int(),
 });

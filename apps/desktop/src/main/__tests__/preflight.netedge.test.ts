@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { PrerequisiteStatus } from '../../shared/preflight.js';
 import type { PreflightContext } from '../preflight/context.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import { detectNetEdge } from '../preflight/detect.js';
-import { summarise } from '../preflight/run.js';
+import { runPreflight, summarise } from '../preflight/run.js';
 
 /**
  * The sidecar is never a reason not to start.
@@ -16,8 +17,17 @@ import { summarise } from '../preflight/run.js';
  * all, so a machine that has never built it — no Go toolchain, no interest in remote access —
  * must still get a working library, a working QR code and a working phone.
  *
- * Two things hold that, and both are asserted here rather than described: the detector's own
- * severity, and the report `canProceed` that bootstrap gates on.
+ * Three things hold that, and all three are asserted here rather than described:
+ *
+ *   - while remote access is switched off, the report does not mention the sidecar *at all*,
+ *     so the first screen of a first run has nothing to say about a feature that is not in
+ *     the build;
+ *   - when it is switched back on, the detector's own severity is `degrading`;
+ *   - and the report `canProceed` that bootstrap gates on stays true with it outstanding.
+ *
+ * The detector tests keep running with the feature off on purpose: `detectNetEdge` is live
+ * code either way, and its severity is the invariant that made the app startable without an
+ * account in the first place. Deciding it is unreachable today is how it comes back wrong.
  */
 
 const dirs: string[] = [];
@@ -59,6 +69,22 @@ const PRINT_MISSING: PrerequisiteStatus = {
   detail: '',
   remedies: [],
 };
+
+describe('the prerequisites report while remote access is switched off', () => {
+  it.skipIf(REMOTE_ACCESS_ENABLED)('does not mention the sidecar at all', async () => {
+    // A directory with nothing in it. The detector, were it running, would report `netedge`
+    // missing and offer to build it — nothing here mocks it away; the point is that it is
+    // never asked.
+    const report = await runPreflight(contextIn(freshDir()), { force: true });
+    const ids = report.items.map((item) => item.id);
+
+    expect(ids).not.toContain('netedge');
+    // Not vacuous: the report is a real one, with the prerequisites that do apply in it.
+    expect(ids).toContain('native-modules');
+    // And nothing switched off can be a reason to stop.
+    expect(report.canProceed).toBe(true);
+  });
+});
 
 describe('the netedge prerequisite', () => {
   it('is degrading when the sidecar has never been built', async () => {

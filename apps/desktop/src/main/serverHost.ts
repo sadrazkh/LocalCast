@@ -29,6 +29,13 @@ export interface ServerHostOptions {
   nativeBinding: string;
   /** Listen on the local network too, so a phone on the same Wi-Fi needs no sign-in. */
   lan: boolean;
+  /**
+   * Also serve the local network unencrypted, and publish *that* address.
+   *
+   * A temporary trade: a self-signed certificate stops a phone at an interstitial, and an
+   * interstitial is not the app, so a scanned link never becomes a paired device.
+   */
+  lanPlaintext: boolean;
 }
 
 export interface ServerHandle {
@@ -99,6 +106,7 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
     version: options.version,
     nativeBinding: options.nativeBinding,
     lan: options.lan,
+    lanPlaintext: options.lanPlaintext,
     host: '127.0.0.1',
     // 0 asks the OS for a free port. Nothing outside this process needs to predict it —
     // netedge is told the number after the fact.

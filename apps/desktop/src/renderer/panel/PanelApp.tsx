@@ -7,7 +7,6 @@ import {
   QrIcon,
   ServerIcon,
   SettingsIcon,
-  edgeStateToConnection,
   useFormat,
   useLocale,
   useT,
@@ -20,7 +19,7 @@ import { navigate } from '../lib/router.js';
 import { PreflightBanner } from '../preflight/index.js';
 import type { PanelSection } from '../lib/router.js';
 import { LibraryProvider, useLibrary } from '../state/library.js';
-import { useShell } from '../state/shell.js';
+import { connectionOf, serverAddress, useShell } from '../state/shell.js';
 import { ActivityScreen } from './ActivityScreen.js';
 import { DevicesScreen } from './DevicesScreen.js';
 import { FoldersScreen } from './FoldersScreen.js';
@@ -52,7 +51,7 @@ function PanelShell({ section }: { section: PanelSection }) {
   const c = useCopy();
   const format = useFormat();
   const { locale } = useLocale();
-  const { status } = useShell();
+  const { status, info } = useShell();
   const { folders, devices } = useLibrary();
 
   const pending = devices.filter((device) => device.status === 'pending').length;
@@ -81,8 +80,13 @@ function PanelShell({ section }: { section: PanelSection }) {
   return (
     <div className={styles.window} lang={locale}>
       <TitleBar>
-        <ConnectionDot state={edgeStateToConnection(status?.state ?? 'starting')} />
-        <AddressField host={status?.host ?? null} />
+        {/*
+          The dot stays: it says whether this machine is serving, which is true of a
+          local-only build too — it simply reads the local server rather than the sidecar
+          while remote access is switched off. See `connectionOf`.
+        */}
+        <ConnectionDot state={connectionOf(status, info)} />
+        <AddressField host={serverAddress(status, info)} />
       </TitleBar>
 
       <div className={styles.split}>

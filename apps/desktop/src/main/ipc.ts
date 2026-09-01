@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import QRCode from 'qrcode';
 import { networkConfigSchema, type EdgeStatus, type NetworkConfig } from '@localcast/contract';
+import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
 import { IPC, type AppInfo, type PairingMintResult, type RedactedNetworkConfig } from '../shared/ipc.js';
 import type { NetEdge } from './netedge.js';
 import type { OperatorClient } from './operatorClient.js';
@@ -72,8 +73,23 @@ const EDGE_NOT_STARTED: EdgeStatus = {
 export function registerIpc(deps: IpcDeps): void {
   const { edge, operator, appConfig } = deps;
 
+  /**
+   * Refuses anything that reaches the sidecar while remote access is switched off.
+   *
+   * The channels stay registered — removing them would turn a stale renderer's call into "No
+   * handler registered", the silent failure this file exists to prevent — but they answer with
+   * a sentence that names the actual reason instead of "not started yet", which invites a
+   * retry that can never work.
+   */
+  function requireRemoteAccess(): void {
+    if (!REMOTE_ACCESS_ENABLED) {
+      throw new Error('Remote access is switched off in this build of LocalCast.');
+    }
+  }
+
   /** Throws a message the UI can show, rather than letting a null reach a property access. */
   function requireEdge(): NetEdge {
+    requireRemoteAccess();
     const instance = edge();
     if (!instance) throw new Error('The network component has not started yet.');
     return instance;
@@ -96,6 +112,10 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   ipcMain.handle(IPC.edgeGetConfig, async () => {
+    // Reads the stored network configuration from the server rather than the sidecar, so it
+    // needs its own guard: without one it is the single remote-access call that still answers
+    // while the feature is off.
+    requireRemoteAccess();
     const stored = await operator().get<NetworkConfig>('/network-config');
     return redact(stored);
   });

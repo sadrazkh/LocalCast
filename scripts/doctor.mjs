@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { PRINTING_ENABLED } from './features.mjs';
 import { electronBindingPath, installedElectronVersion, nativeStatus } from './rebuild-native.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -118,28 +119,14 @@ report(
 // print and *why* the rest do not, because the two reasons have two different fixes: the
 // helper is missing, or Windows has no application registered to print that type. So this
 // section asks the registry the same question `modules/print/spooler.ts` asks per job.
+//
+// **All of that is skipped while `PRINTING_ENABLED` is false**, and skipped rather than
+// deleted: the feature is switched off, not removed, and this is the report it comes back to.
+// Demanding a helper for a feature no client can reach — and spending a PowerShell round trip
+// working out which image types would have printed — is exactly the noise the switch exists to
+// remove. One `ok` line stays, because silence would be its own puzzle: somebody who knows
+// LocalCast prints would reasonably read an empty section as a broken check.
 const INSTALL_HELPER = 'node scripts/install-print-helper.mjs';
-
-const sumatra = ['SumatraPDF.exe', 'SumatraPDF-portable.exe', 'sumatrapdf.exe'].some((name) =>
-  existsSync(join(ROOT, 'vendor', 'bin', name)),
-);
-report(
-  sumatra ? 'ok' : 'degrading',
-  'print helper',
-  sumatra
-    ? 'vendor/bin/SumatraPDF.exe'
-    : 'vendor/bin/SumatraPDF.exe is missing — see the two lines below for what still prints',
-  `${INSTALL_HELPER}   (it stages and shows you the digest; it installs nothing on its own)`,
-);
-
-if (sumatra && !existsSync(join(ROOT, 'vendor', 'checksums.json'))) {
-  report(
-    'degrading',
-    'print helper digest',
-    'vendor/checksums.json does not exist, so nothing verifies which binary this is',
-    'node scripts/verify-vendor.mjs --record',
-  );
-}
 
 /**
  * Which extensions the shell has a `PrintTo` verb for.
@@ -189,51 +176,81 @@ function printToHandlers(extensions) {
 
 // The image types `assertPrintable` accepts, minus PDF.
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp'];
-const handlers = printToHandlers(['.pdf', ...IMAGE_EXTENSIONS]);
 
-if (process.platform !== 'win32') {
-  report('ok', 'print preflight', `skipped: printing is Windows-only and this is ${process.platform}`);
-} else if (handlers === null) {
+if (!PRINTING_ENABLED) {
   report(
-    'degrading',
-    'print preflight',
-    'the registry could not be read, so which types will print is unknown',
-    'Run this from a normal PowerShell-capable shell; printing itself may still work',
+    'ok',
+    'printing',
+    'switched off in this build — nothing here needs the print helper (scripts/features.mjs)',
   );
-} else if (sumatra) {
-  // With the helper there is nothing to work out: it renders and prints every type LocalCast
-  // accepts, and it is the only path that can carry copies, duplex and a page range.
-  report('ok', 'image printing', 'through the bundled helper — all accepted image types');
-  report('ok', 'PDF printing', 'through the bundled helper, including copies, duplex and page ranges');
 } else {
-  const can = IMAGE_EXTENSIONS.filter((ext) => handlers.get(ext)?.printTo);
-  const cannot = IMAGE_EXTENSIONS.filter((ext) => !handlers.get(ext)?.printTo);
-  // Degrading, never blocking: LocalCast is a file server that also prints, and refusing to
-  // start over a missing print path would be the wrong trade — the app already tells the user
-  // per job. `npm run doctor` runs in CI, where a runner has no image handlers at all.
+  const sumatra = ['SumatraPDF.exe', 'SumatraPDF-portable.exe', 'sumatrapdf.exe'].some((name) =>
+    existsSync(join(ROOT, 'vendor', 'bin', name)),
+  );
   report(
-    can.length > 0 ? 'limited' : 'degrading',
-    'image printing',
-    can.length === 0
-      ? 'no image type has a Windows PrintTo handler on this machine — no image will print'
-      : `${can.join(' ')} print through Windows itself` +
-        (cannot.length ? `; ${cannot.join(' ')} will be refused — no PrintTo handler` : ''),
-    `${INSTALL_HELPER}   (the helper prints every type, and is the only way to ask for copies, duplex or a page range)`,
+    sumatra ? 'ok' : 'degrading',
+    'print helper',
+    sumatra
+      ? 'vendor/bin/SumatraPDF.exe'
+      : 'vendor/bin/SumatraPDF.exe is missing — see the two lines below for what still prints',
+    `${INSTALL_HELPER}   (it stages and shows you the digest; it installs nothing on its own)`,
   );
 
-  const pdf = handlers.get('.pdf');
-  report(
-    pdf?.printTo ? 'limited' : 'degrading',
-    'PDF printing',
-    pdf?.printTo
-      ? `through ${pdf.progId}, which registered a Windows PrintTo handler — one copy, ` +
-        'single-sided, whole document only'
-      : 'PDFs will NOT print. No reader on this machine registers a PrintTo handler, which is ' +
-        'the case on a clean Windows: Edge can open a PDF but not print one from the shell',
-    pdf?.printTo
-      ? `${INSTALL_HELPER}   (needed for copies, duplex or a page range)`
-      : `${INSTALL_HELPER}   (PDF printing needs a reader; this installs the bundled one)`,
-  );
+  if (sumatra && !existsSync(join(ROOT, 'vendor', 'checksums.json'))) {
+    report(
+      'degrading',
+      'print helper digest',
+      'vendor/checksums.json does not exist, so nothing verifies which binary this is',
+      'node scripts/verify-vendor.mjs --record',
+    );
+  }
+
+  const handlers = printToHandlers(['.pdf', ...IMAGE_EXTENSIONS]);
+
+  if (process.platform !== 'win32') {
+    report('ok', 'print preflight', `skipped: printing is Windows-only and this is ${process.platform}`);
+  } else if (handlers === null) {
+    report(
+      'degrading',
+      'print preflight',
+      'the registry could not be read, so which types will print is unknown',
+      'Run this from a normal PowerShell-capable shell; printing itself may still work',
+    );
+  } else if (sumatra) {
+    // With the helper there is nothing to work out: it renders and prints every type LocalCast
+    // accepts, and it is the only path that can carry copies, duplex and a page range.
+    report('ok', 'image printing', 'through the bundled helper — all accepted image types');
+    report('ok', 'PDF printing', 'through the bundled helper, including copies, duplex and page ranges');
+  } else {
+    const can = IMAGE_EXTENSIONS.filter((ext) => handlers.get(ext)?.printTo);
+    const cannot = IMAGE_EXTENSIONS.filter((ext) => !handlers.get(ext)?.printTo);
+    // Degrading, never blocking: LocalCast is a file server that also prints, and refusing to
+    // start over a missing print path would be the wrong trade — the app already tells the user
+    // per job. `npm run doctor` runs in CI, where a runner has no image handlers at all.
+    report(
+      can.length > 0 ? 'limited' : 'degrading',
+      'image printing',
+      can.length === 0
+        ? 'no image type has a Windows PrintTo handler on this machine — no image will print'
+        : `${can.join(' ')} print through Windows itself` +
+          (cannot.length ? `; ${cannot.join(' ')} will be refused — no PrintTo handler` : ''),
+      `${INSTALL_HELPER}   (the helper prints every type, and is the only way to ask for copies, duplex or a page range)`,
+    );
+
+    const pdf = handlers.get('.pdf');
+    report(
+      pdf?.printTo ? 'limited' : 'degrading',
+      'PDF printing',
+      pdf?.printTo
+        ? `through ${pdf.progId}, which registered a Windows PrintTo handler — one copy, ` +
+          'single-sided, whole document only'
+        : 'PDFs will NOT print. No reader on this machine registers a PrintTo handler, which is ' +
+          'the case on a clean Windows: Edge can open a PDF but not print one from the shell',
+      pdf?.printTo
+        ? `${INSTALL_HELPER}   (needed for copies, duplex or a page range)`
+        : `${INSTALL_HELPER}   (PDF printing needs a reader; this installs the bundled one)`,
+    );
+  }
 }
 
 // ── Report ──────────────────────────────────────────────────────────────────────────────

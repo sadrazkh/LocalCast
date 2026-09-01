@@ -82,7 +82,15 @@ function renderRoute(
 
   switch (head) {
     case 'pair':
-      return <PairRoute {...(decode === undefined ? {} : { decode })} />;
+      // `?p=CODE.SECRET` is put there by `adoptPairingLink` when the phone's camera opened
+      // the QR. Passing it down means the screen claims immediately instead of asking for a
+      // camera it does not need.
+      return (
+        <PairRoute
+          {...(decode === undefined ? {} : { decode })}
+          {...(query.get('p') ? { fromLink: query.get('p') as string } : {})}
+        />
+      );
     case 'play':
       // No id means somebody hand-edited the hash; the library is the honest destination.
       return second === undefined ? <LibraryRoute folderId={null} path="" /> : <PlayerRoute fileId={second} />;

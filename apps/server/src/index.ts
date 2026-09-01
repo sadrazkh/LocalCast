@@ -295,9 +295,27 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
         plaintextListening = true;
         // A warning, not an info line. This listener is a deliberate exception to "every
         // connection is encrypted", and a log that states it plainly is part of the price.
+        /**
+         * When it is on, this is the address that gets published.
+         *
+         * A QR code pointing at the encrypted listener leads to a certificate interstitial,
+         * and on a phone that is where pairing stops: the warning page is not the app, so the
+         * link the camera opened does not become a paired device. Somebody who has turned this
+         * listener on has already accepted what it costs, and publishing an address they then
+         * cannot use would make the switch pointless.
+         *
+         * The encrypted listener keeps running on its own port for anything that prefers it.
+         */
+        if (lanCert?.publishHost != null) {
+          lanEndpoint = {
+            url: `http://${lanCert.publishHost}:${plainAddr.port}`,
+            fingerprint256: '',
+          };
+        }
         log.warn('local network ALSO listening unencrypted (http)', {
           host: plainAddr.address,
           port: plainAddr.port,
+          published: lanEndpoint?.url ?? '(none)',
           note: 'devices on this address get no offline library and no camera; http is never a secure context',
         });
       }

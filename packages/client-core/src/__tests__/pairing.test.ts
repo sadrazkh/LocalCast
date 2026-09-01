@@ -58,16 +58,39 @@ describe('QR validation', () => {
     expect(fieldsOf(error)).toContain('v');
   });
 
-  it('rejects a payload with no secret — the long secret is what makes the QR unguessable', () => {
-    const missing = { v: 1, host: GOOD.host, code: GOOD.code };
-    let caught: unknown;
-    try {
-      parseQrPayload(JSON.stringify(missing));
-    } catch (e) {
-      caught = e;
-    }
-    expect((caught as LocalCastError).code).toBe(ErrorCode.PAIRING_INVALID);
-    expect(fieldsOf(caught)).toContain('secret');
+  it('accepts a payload with no secret, because the typed code is a real path', () => {
+    /**
+     * This used to assert the opposite, and the old rule was wrong rather than merely strict.
+     *
+     * The long secret protects the *scanned* code — it is what makes a QR unguessable. There
+     * is no scanned code to protect when somebody reads four characters off a screen and types
+     * them, and that path has been first-class since the beginning: it is the one that works
+     * when the camera is unavailable, which on a local-network origin it often is.
+     *
+     * What guards the typed path is the rate limiter and the five-failure lockout, both of
+     * which are tested on the server. Refusing a secretless payload here refused the fallback
+     * as well as the attack.
+     */
+    const typed = parseQrPayload(JSON.stringify({ v: 1, host: GOOD.host, code: GOOD.code }));
+    expect(typed.code).toBe(GOOD.code);
+    expect(typed.secret).toBeUndefined();
+  });
+
+  it('reads a pairing link, which is what a phone camera can actually open', () => {
+    const payload = parseQrPayload(`http://192.168.1.24:8420/#p=WJG6.${'s'.repeat(43)}`);
+    expect(payload.code).toBe('WJG6');
+    expect(payload.url).toBe('http://192.168.1.24:8420');
+    expect(payload.secret).toHaveLength(43);
+  });
+
+  it('reads a link with only a code, for a QR minted without a secret', () => {
+    const payload = parseQrPayload('http://192.168.1.24:8420/#p=WJG6');
+    expect(payload.code).toBe('WJG6');
+    expect(payload.secret).toBeUndefined();
+  });
+
+  it('refuses a link with no pairing code in its fragment', () => {
+    expect(() => parseQrPayload('http://192.168.1.24:8420/')).toThrow();
   });
 
   it('rejects a secret that is too short to be 32 random bytes', () => {

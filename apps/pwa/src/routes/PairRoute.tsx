@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, QrFrame, Spinner, useT } from '@localcast/ui-kit';
 import { parseQrPayload, systemClock } from '@localcast/client-core';
 import type { QrDecoder } from '../hooks/useQrScanner.js';
@@ -28,9 +28,17 @@ export interface PairRouteProps {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
   /** The name this device registers under. Editable before the first claim. */
   defaultDeviceName?: string;
+  /**
+   * `CODE.SECRET`, lifted out of the fragment of a scanned pairing link.
+   *
+   * Present when the phone's own camera opened the QR — which is the ordinary path now, and
+   * the one that needs no camera permission inside the app. The screen claims immediately
+   * rather than showing a viewfinder for a code it already has.
+   */
+  fromLink?: string;
 }
 
-export function PairRoute({ decode, getUserMedia, defaultDeviceName }: PairRouteProps) {
+export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }: PairRouteProps) {
   const t = useT();
   const at = useAppT();
   const client = useClient();
@@ -73,6 +81,18 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName }: PairRoute
     },
     [at, client, deviceName],
   );
+
+  /**
+   * Claim straight away when the link carried the code.
+   *
+   * `onScan` takes the raw scanned text, and a pairing link is exactly that text — so this
+   * reuses the same path rather than a parallel one, and a bug in either is a bug in both.
+   * It runs once: `busy` guards a re-render, and the effect has no reason to fire twice.
+   */
+  useEffect(() => {
+    if (fromLink === undefined || fromLink.length === 0) return;
+    onScan(`${window.location.origin}/#p=${fromLink}`);
+  }, [fromLink, onScan]);
 
   const scanner = useQrScanner({
     enabled: phase === 'scanning',

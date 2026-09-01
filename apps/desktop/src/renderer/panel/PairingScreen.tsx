@@ -16,6 +16,7 @@ import { AddressField } from '../components/AddressField.js';
 import { getApi, qrPayloadOf } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
 import { messageOf } from '../lib/useAsync.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import { useLibrary } from '../state/library.js';
 import { useShell } from '../state/shell.js';
 import styles from './PairingScreen.module.css';
@@ -133,8 +134,14 @@ export function PairingScreen() {
 
           <div className={styles.sideColumn}>
             <div className={styles.addresses}>
-              <AddressField host={status?.host ?? null} />
-              {status?.funnelUrl ? (
+              {/*
+                Both of these are addresses the coordination server hands out, so while remote
+                access is switched off they are permanently «هنوز آماده نیست» — an empty field
+                promising something that is not coming. The Wi-Fi address below is the one a
+                phone actually uses in that build, and it is enough on its own.
+              */}
+              {REMOTE_ACCESS_ENABLED ? <AddressField host={status?.host ?? null} /> : null}
+              {REMOTE_ACCESS_ENABLED && status?.funnelUrl ? (
                 <AddressField host={status.funnelUrl} label={t('network.publicAddress')} />
               ) : null}
               {info?.lanUrl ? (

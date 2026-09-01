@@ -47,6 +47,10 @@ export const copy = {
     'wizard.signInFailed': 'ورود کامل نشد. یک بار دیگر تلاش کنید.',
     'wizard.qrTitle': 'اولین دستگاه را اضافه کنید',
     'wizard.qrBody': 'با دوربین گوشی این تصویر را بگیرید تا دستگاه شما وصل شود.',
+    // Used while remote access is switched off, which is the only time the same-Wi-Fi
+    // condition is real. It is a promise, not a warning: no account, nothing to sign into.
+    'wizard.qrBodyLocal':
+      'گوشی را به همین وای‌فای وصل کنید و با دوربینش این تصویر را بگیرید. هیچ حساب کاربری لازم نیست.',
     'wizard.qrFallback': 'اگر دوربین کار نکرد، این چهار نویسه را دستی وارد کنید',
     'wizard.qrFailed': 'ساختن تصویر انجام نشد',
     'wizard.finish': 'پایان',
@@ -202,6 +206,8 @@ export const copy = {
     'wizard.signInFailed': 'Sign-in did not finish. Try once more.',
     'wizard.qrTitle': 'Add your first device',
     'wizard.qrBody': 'Point your phone camera at this picture to connect it.',
+    'wizard.qrBodyLocal':
+      'Put your phone on this same Wi-Fi and point its camera at this picture. No account is needed.',
     'wizard.qrFallback': 'If the camera will not do it, type these four characters instead',
     'wizard.qrFailed': 'The picture could not be made',
     'wizard.finish': 'Finish',

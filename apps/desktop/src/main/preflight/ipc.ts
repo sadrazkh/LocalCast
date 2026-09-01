@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { PRINTING_ENABLED } from '../../shared/features.js';
 import {
   PREFLIGHT_IPC,
   type InstallOutcome,
@@ -110,6 +111,23 @@ export function registerPreflightIpc(ctx: PreflightContext, hooks: PreflightIpcH
    */
   ipcMain.handle(PREFLIGHT_IPC.install, async (_e, rawId: unknown, rawConfirmed?: unknown) => {
     const id = asPrerequisiteId(rawId);
+
+    // `print-helper` stays a known id — the switch is temporary and the id is still the right
+    // name for the thing — but nothing downloads a 20 MB helper for a feature no route in this
+    // build can reach. The window that offered the button was showing a report from before the
+    // flag; this is the check that makes it harmless rather than a surprising download.
+    if (id === 'print-helper' && !PRINTING_ENABLED) {
+      const refused: InstallOutcome = {
+        ok: false,
+        id,
+        reason: 'unsupported',
+        message:
+          'Printing is switched off in this build, so the print helper is not needed. ' +
+          'It can be installed once printing is switched back on.',
+      };
+      return refused;
+    }
+
     const confirmed = confirmedDigest(rawConfirmed);
     const outcome = confirmed
       ? await confirmAndInstall(id, confirmed, ctx, { onProgress: broadcast })

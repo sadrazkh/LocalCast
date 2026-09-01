@@ -52,6 +52,18 @@ export async function startServer(overrides: CreateServerOptions = {}): Promise<
     logLevel: 'silent',
     indexOnStart: false,
     publicHost: 'test.localcast.example',
+    /**
+     * Ephemeral LAN ports, unlike production.
+     *
+     * The product binds fixed ports (8420/8421) because an address a person types has to be
+     * the same tomorrow. A test suite has the opposite need: vitest runs files in parallel, so
+     * two servers asking for 8420 in the same second means one of them does not start and the
+     * failure looks like a broken listener rather than a busy socket.
+     *
+     * Overridable, so a test that cares about the real numbers can still ask for them.
+     */
+    lanPort: 0,
+    lanPlaintextPort: 0,
     ...overrides,
   });
   const addr = await server.listen(0);

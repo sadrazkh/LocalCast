@@ -97,8 +97,15 @@ Full detail, in English and Persian: [`docs/prerequisites.md`](docs/prerequisite
 
 - Node 22+ and npm 10+
 - Go 1.23+ — only to build `netedge`, but nothing reaches this machine from outside without it
-- `SumatraPDF.exe` in `vendor/bin` — printing only; see [`vendor/README.md`](vendor/README.md)
+- ~~`SumatraPDF.exe` in `vendor/bin`~~ — printing only, and **printing is switched off in this
+  build**; see the note below
 - Windows 10/11 for the server and printing; clients run anywhere
+
+> **Printing is switched off in this build.** Nothing was deleted: the print module and its
+> tests are intact, and the server answers its routes with a typed "this feature is off"
+> rather than a 404. To bring it back, set `PRINTING_ENABLED` to `true` in all three of
+> `apps/server/src/modules/features.ts`, `apps/desktop/src/shared/features.ts` and
+> `scripts/features.mjs`, then rebuild.
 
 ## State of the build
 
@@ -165,4 +172,5 @@ unreliable on Android.
 
 Drop `SumatraPDF.exe` into `vendor/bin` — see [`vendor/README.md`](vendor/README.md). Without
 it everything works except printing, which fails with a message saying the print helper is
-missing rather than pretending to queue.
+missing rather than pretending to queue. **Not needed while printing is switched off** —
+`scripts/prepack.mjs` does not ask for it, and packaging without it warns about nothing.

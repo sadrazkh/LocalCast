@@ -1,3 +1,4 @@
+import { PRINTING_ENABLED, REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import type {
   PreflightReport,
   PrerequisiteId,
@@ -75,11 +76,26 @@ async function detectAll(ctx: PreflightContext): Promise<PreflightReport> {
   // Concurrent: `go version` spawns a process and the native module load touches the disk,
   // and this sits directly in front of the first window the user sees.
   const items = await Promise.all([
-    // NETEDGE_SEVERITY, not a literal. A detector that throws would otherwise come back
-    // blocking and stop the app over a sidecar it does not need — reintroducing, through the
-    // error path, exactly the behaviour making sign-in optional was meant to remove.
-    guard('netedge', NETEDGE_SEVERITY, () => detectNetEdge(ctx)),
-    guard('print-helper', 'degrading', () => detectPrintHelper(ctx)),
+    // Same treatment as the print helper below, and for the same reason: while remote access
+    // is switched off the sidecar cannot stand between the user and anything, because there is
+    // no feature it could hold up. The prerequisites screen is the first thing shown on a
+    // first run, and a row about `netedge.exe` there — green, missing, or offering to install
+    // Go — is a question about a feature that is not in the build.
+    //
+    // NETEDGE_SEVERITY, not a literal, on the branch that does run it. A detector that throws
+    // would otherwise come back blocking and stop the app over a sidecar it does not need —
+    // reintroducing, through the error path, exactly the behaviour making sign-in optional was
+    // meant to remove.
+    ...(REMOTE_ACCESS_ENABLED
+      ? [guard('netedge', NETEDGE_SEVERITY, () => detectNetEdge(ctx))]
+      : []),
+    // Omitted entirely rather than reported `ok`, or reported with a softer word. A
+    // prerequisites screen is a list of things standing between the user and a working app,
+    // and while printing is switched off SumatraPDF is not one of them: there is no route that
+    // could use it. A row for it — even a green one — is a question the user has to answer
+    // before they understand it does not matter. `detectPrintHelper` is untouched and comes
+    // straight back when the flag does; see `shared/features.ts`.
+    ...(PRINTING_ENABLED ? [guard('print-helper', 'degrading', () => detectPrintHelper(ctx))] : []),
     guard('native-modules', 'blocking', () => detectNativeModules(ctx.nativeBinding)),
   ]);
 

@@ -85,14 +85,26 @@ export interface AppInfo {
    */
   lanFingerprint: string | null;
   locale: 'fa' | 'en';
-  /** False until the three-step wizard has been completed once. */
+  /** False until the first-run wizard has been completed once. */
   setupComplete: boolean;
 }
 
 export interface PairingMintResult {
   code: string;
-  /** The full QR payload, already JSON-encoded, ready to be turned into an image. */
+  /** The full QR payload, already JSON-encoded. Kept for clients that read the old form. */
   payload: string;
+  /**
+   * The address the QR image encodes: `http://192.168.1.24:8420/#p=CODE.SECRET`.
+   *
+   * This is what goes in the image. A phone's camera opens it like any other link, which is
+   * the whole point — the previous code encoded the JSON payload, which no camera app can do
+   * anything with, so scanning it outside LocalCast did nothing and scanning it inside needed
+   * a camera the browser would not grant.
+   *
+   * Null when the machine has no local address to publish; the four-character code is then
+   * the only path and the screen says so.
+   */
+  link: string | null;
   expiresAt: number;
 }
 
@@ -112,6 +124,12 @@ export interface DesktopApi {
    * feature-detects its own backend forever is a screen nobody ever finishes wiring.
    */
   preflight: import('./preflight.js').PreflightBridge;
+  /**
+   * Remote access, in full. The bridge keeps its whole shape while
+   * `features.REMOTE_ACCESS_ENABLED` is false — the switch is in the renderer, which does not
+   * call these, and in main, which refuses them — so that switching the feature back on is one
+   * constant rather than a re-plumbing of the preload contract.
+   */
   edge: {
     status(): Promise<EdgeStatus>;
     onEvent(handler: (status: EdgeStatus) => void): () => void;

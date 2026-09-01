@@ -26,6 +26,21 @@ import { createServer, silentLogger, type LocalCastServer } from '@localcast/ser
  * proof is that `child_process.spawn` is called exactly once for the whole round trip.
  */
 
+/**
+ * This file is *about* remote access, so it runs with remote access switched on.
+ *
+ * `REMOTE_ACCESS_ENABLED` is false in the build as shipped, and `registerIpc` refuses every
+ * edge call while it is — which would turn all of the below into one repeated "remote access
+ * is switched off" and prove nothing. Overriding the flag here is what keeps this evidence
+ * alive while the feature is parked: the day it is switched back on, these tests have been
+ * green all along rather than being rediscovered as a wall of failures. `importOriginal` so
+ * the other flags keep whatever value they really have.
+ */
+vi.mock('../../shared/features.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../shared/features.js')>()),
+  REMOTE_ACCESS_ENABLED: true,
+}));
+
 // ── the Electron boundary ────────────────────────────────────────────────────
 // `registerIpc` talks to `ipcMain`, so the handlers are captured here and invoked directly.
 // That is the point: the test drives the same function the renderer's `edge:apply-config`

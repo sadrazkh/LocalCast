@@ -2,7 +2,8 @@ import { app, BrowserWindow, dialog } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
-import { AppConfigStore, configPathFor } from './appConfig.js';
+import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
+import { AppConfigStore, configPathFor, remoteAccessOn } from './appConfig.js';
 import { broadcastEdgeStatus, registerIpc } from './ipc.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
@@ -21,7 +22,33 @@ import { createMainWindow, createTrayWindow, createWizardWindow } from './window
  * and `netedge` has to be up before the tray can show anything truthful. Each step reports
  * its own failure rather than leaving the app in a state where the tray says "connecting"
  * and nothing is actually running.
+ *
+ * While `REMOTE_ACCESS_ENABLED` is false the sidecar is not part of that order at all: it is
+ * never located, never constructed and never spawned, so `edge` stays null for the life of
+ * the process. Every consumer already had to cope with a null edge — the prerequisites gate
+ * opens windows before the sidecar exists — so this needs no second code path, only the
+ * absence of one. See `src/shared/features.ts` for why this is a switch and not a deletion.
  */
+
+/**
+ * What the tray is told while remote access is off.
+ *
+ * The tray icon carries exactly one bit — is this machine serving — and by the time this is
+ * used the local server is listening. Leaving the tray at its constructed "off" state would
+ * put a red icon and «سرور خاموش است» in the system tray of a machine that is serving its
+ * library to every phone on the Wi-Fi, which is the same lie in a smaller place.
+ */
+const LOCAL_ONLY_STATUS: EdgeStatus = {
+  state: 'connected',
+  host: null,
+  funnelUrl: null,
+  loginUrl: null,
+  errorCode: null,
+  errorMessage: null,
+  certExpiresAt: null,
+  peers: 0,
+  updatedAt: 0,
+};
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
@@ -263,6 +290,7 @@ async function bootstrap(): Promise<void> {
       // screen has already told the user which command produces it.
       nativeBinding: existsSync(p.nativeBinding) ? p.nativeBinding : '',
       lan: appConfig.get().shareOnLan,
+      lanPlaintext: appConfig.get().shareOnLan && appConfig.get().shareOnLanUnencrypted,
     });
   } catch (err) {
     if (err instanceof ServerNotBuilt) {
@@ -275,29 +303,35 @@ async function bootstrap(): Promise<void> {
 
   operatorClient = new OperatorClient(serverHandle.port, edgeSecret);
 
+  // Nothing about the sidecar happens while the feature is off — not even looking for it.
+  // Resolving the binary is what produces the "searched: …" paths the prerequisites screen
+  // shows, so a build with remote access switched off must not do it: there is no feature to
+  // report a missing prerequisite *for*.
   let binaryPath: string | undefined;
-  try {
-    binaryPath = NetEdge.resolveBinary(app.getAppPath(), process.resourcesPath);
-  } catch (err) {
-    // The sidecar is a separate Go build. Without it there is no remote access, but the panel
-    // must still open so the user can see what is wrong and manage folders and devices.
-    if (!(err instanceof NetEdgeBinaryMissing)) throw err;
-    binaryPath = undefined;
+  if (REMOTE_ACCESS_ENABLED) {
+    try {
+      binaryPath = NetEdge.resolveBinary(app.getAppPath(), process.resourcesPath);
+    } catch (err) {
+      // The sidecar is a separate Go build. Without it there is no remote access, but the panel
+      // must still open so the user can see what is wrong and manage folders and devices.
+      if (!(err instanceof NetEdgeBinaryMissing)) throw err;
+      binaryPath = undefined;
+    }
+
+    edge = new NetEdge({
+      stateDir: join(p.dataDir, 'tsnet'),
+      configPath: join(p.dataDir, 'netedge.json'),
+      upstream: `127.0.0.1:${serverHandle.port}`,
+      sharedSecret: edgeSecret,
+      ...(binaryPath ? { binaryPath } : {}),
+    });
+
+    edge.on('log', (level, message) => {
+      const line = `[netedge] ${message}`;
+      if (level === 'error') console.error(line);
+      else console.log(line);
+    });
   }
-
-  edge = new NetEdge({
-    stateDir: join(p.dataDir, 'tsnet'),
-    configPath: join(p.dataDir, 'netedge.json'),
-    upstream: `127.0.0.1:${serverHandle.port}`,
-    sharedSecret: edgeSecret,
-    ...(binaryPath ? { binaryPath } : {}),
-  });
-
-  edge.on('log', (level, message) => {
-    const line = `[netedge] ${message}`;
-    if (level === 'error') console.error(line);
-    else console.log(line);
-  });
 
   trayWindow = createTrayWindow(p.preloadDir);
   tray = new AppTray(p.assetsDir, trayWindow, {
@@ -311,16 +345,23 @@ async function bootstrap(): Promise<void> {
     },
   }, appConfig.get().locale);
 
-  edge.on('status', (status: EdgeStatus) => {
-    tray?.update(status);
-    // Hand the MagicDNS name to the server as soon as the node has one, so the next QR code
-    // carries the address devices can actually reach. It changes again on a mode switch,
-    // which is why this follows the status stream rather than being read once at boot.
-    if (status.host) serverHandle?.setPublicHost(status.host);
-  });
-  tray.update(edge.status);
+  if (edge) {
+    edge.on('status', (status: EdgeStatus) => {
+      tray?.update(status);
+      // Hand the MagicDNS name to the server as soon as the node has one, so the next QR code
+      // carries the address devices can actually reach. It changes again on a mode switch,
+      // which is why this follows the status stream rather than being read once at boot.
+      if (status.host) serverHandle?.setPublicHost(status.host);
+    });
+    tray.update(edge.status);
 
-  broadcastEdgeStatus(edge);
+    broadcastEdgeStatus(edge);
+  } else {
+    // No status stream exists to drive the tray, so it is told once, here, what is true: the
+    // local server is up. Windows read the same fact from `app.info()` — see `isServerOn` in
+    // the renderer — rather than from an edge status that will never arrive.
+    tray.update(LOCAL_ONLY_STATUS);
+  }
 
   /**
    * The address a phone on the same Wi-Fi types or scans, e.g. `https://192.168.1.50:8443`.
@@ -342,9 +383,11 @@ async function bootstrap(): Promise<void> {
     console.warn('[server] local sharing is on, but this machine has no local network address');
   }
 
-  // Only when the user has asked to be reachable from elsewhere. Starting it unasked is what
-  // made the app look broken: it sat on a sign-in screen for a feature most people never use.
-  if (binaryPath && appConfig.get().remoteAccess) {
+  // Only when the user has asked to be reachable from elsewhere, and only when the feature is
+  // switched on at all. Starting it unasked is what made the app look broken: it sat on a
+  // sign-in screen for a feature most people never use. `remoteAccessOn` is where the build
+  // switch overrides the stored preference without overwriting it.
+  if (edge && binaryPath && remoteAccessOn(appConfig.get())) {
     // Failure to come up is a state the UI already knows how to show, so it is surfaced
     // through the status stream rather than thrown into a dialog the user cannot act on.
     void edge.start().catch((err: unknown) => {

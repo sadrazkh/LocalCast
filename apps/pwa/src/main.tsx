@@ -16,6 +16,31 @@ import { ClientProvider } from './client/ClientProvider.js';
  * pairing flow be tested without a camera, and what keeps a 40 kB decoder out of the module
  * graph of every screen that is not the pairing screen.
  */
+/**
+ * Turn a scanned pairing link into a route before anything renders.
+ *
+ * The QR code is a plain URL — `http://192.168.1.24:8420/#p=CODE.SECRET` — so the phone's own
+ * camera opens it like any other link. That is the whole point: pairing must not require the
+ * in-app scanner, which needs a camera permission the browser will not grant on an address
+ * nobody has paired with yet.
+ *
+ * The fragment is rewritten to the pairing route and replaced in history, so the secret is
+ * not left sitting in the address bar for the next person who picks up the phone.
+ */
+function adoptPairingLink(): void {
+  const hash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!hash.startsWith('p=')) return;
+
+  const value = new URLSearchParams(hash).get('p') ?? '';
+  if (value.length === 0) return;
+
+  window.history.replaceState(null, '', `${window.location.pathname}#/pair?p=${encodeURIComponent(value)}`);
+}
+
+adoptPairingLink();
+
 const container = document.getElementById('root');
 if (container === null) throw new Error('#root is missing from index.html');
 

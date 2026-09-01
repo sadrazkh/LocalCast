@@ -194,20 +194,35 @@ describe('turning it on changes nothing about the encrypted listener', () => {
     expect((await res.json()).error.message).toMatch(/edge credentials/i);
   });
 
-  it('never publishes the unencrypted address in the QR payload', async () => {
+  it('publishes the unencrypted address once it is turned on, because otherwise the link is a dead end', async () => {
     const ts = await server({ lanPlaintext: true, lanHosts: ['192.168.88.8'] });
-    const minted = await ts.json<{ qr: { url?: string } }>('/operator/pairing', {
-      method: 'POST',
-      body: JSON.stringify({ ttlSeconds: 300 }),
-      headers: { 'content-type': 'application/json' },
-    });
+    const minted = await ts.json<{ qr: { url?: string }; link: string | null }>(
+      '/operator/pairing',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ttlSeconds: 300 }),
+        headers: { 'content-type': 'application/json' },
+      },
+    );
 
-    // The only way onto the unencrypted listener is for a person to read its address off the
-    // panel and type it. Anything scannable would make the downgrade a drift rather than a
-    // decision.
-    expect(minted.qr.url).toMatch(/^https:\/\//);
+    /**
+     * This assertion used to say the opposite, and reversing it was the point.
+     *
+     * Publishing the encrypted address kept the downgrade a deliberate act — a person had to
+     * read an address off the panel and type it. But a QR pointing at a self-signed origin
+     * leads a phone to a certificate interstitial, and an interstitial is not the app: the
+     * scanned link stops there and never becomes a paired device. A switch whose published
+     * address cannot complete the flow it exists to enable is not a safeguard.
+     *
+     * So when this listener is on it is the one advertised, and the panel says what it costs.
+     * `lanPlaintext` is still off by default and still nothing derives it from `lan`.
+     */
+    expect(minted.link).toMatch(/^http:\/\//);
+    expect(minted.link).toContain(String(plainPortOf(ts)));
     expect(minted.qr.url).toBe(ts.server.lanEndpoint()?.url);
-    expect(minted.qr.url).not.toContain(String(plainPortOf(ts)));
+
+    // The encrypted listener is untouched and still bound on its own port.
+    expect(ts.server.lanAddress()?.port).not.toBe(plainPortOf(ts));
   });
 });
 

@@ -366,7 +366,9 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
         defaultPermissions: body.defaultPermissions,
         ttlSeconds: body.ttlSeconds,
       });
-      res.status(201).json({ code: minted.code, qr: minted.qr, expiresAt: minted.expiresAt });
+      res
+        .status(201)
+        .json({ code: minted.code, qr: minted.qr, link: minted.link, expiresAt: minted.expiresAt });
     }),
   );
 

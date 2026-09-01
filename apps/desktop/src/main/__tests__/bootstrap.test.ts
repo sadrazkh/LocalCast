@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,14 +10,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * `netedge` is the only part of LocalCast that wants an account, and starting it unasked is
  * precisely what made the app look broken: it sat on a Tailscale sign-in screen for a feature
  * most people never use, while the library it could already have served over the Wi-Fi went
- * unserved. `remoteAccess` gates it, and this file holds that gate by watching the one thing
- * that cannot be faked — the process spawn.
+ * unserved. Two gates now stand in front of it and this file holds both, by watching the one
+ * thing that cannot be faked — the process spawn:
+ *
+ *   1. `REMOTE_ACCESS_ENABLED` in `shared/features.ts`, the build switch, which is false
+ *      today and overrides everything below it;
+ *   2. the user's stored `remoteAccess` preference, which is what decides once the feature is
+ *      switched back on.
+ *
+ * Both flag states are exercised, because a suite that only ever ran with the feature off
+ * would assert an absence that nothing could ever contradict — and would tell the person who
+ * switches the feature back on nothing about whether it still works. `boot` takes the flag
+ * and installs it as a module mock before `../index.js` is imported.
  *
  * `bootstrap` is not exported: importing `../index.js` *is* running it, which is why the
  * module is re-imported per case with a fresh set of doubles. Everything Electron owns is
  * replaced; `netedge.ts`, `ipc.ts`, `appConfig.ts` and `secrets.ts` are the real thing, so the
  * gate under test is the one that ships.
  */
+
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 
 const h = vi.hoisted(() => {
   interface FakeStream {
@@ -150,8 +162,15 @@ function writeConfig(dataDir: string, patch: Record<string, unknown>): void {
  * Runs one full bootstrap against a data directory whose `config.json` says `patch`, and
  * resolves once bootstrap has finished. `netedge.exe` is planted where the resolver looks, so
  * "the sidecar was not started" can never be an accident of it not being installed.
+ *
+ * `feature` is the build switch. It defaults to whatever ships, so a case that does not
+ * mention it is a statement about the real build; passing `true` is how the tests for the
+ * switched-on behaviour stay runnable while the switch is off.
  */
-async function boot(patch: Record<string, unknown>): Promise<void> {
+async function boot(
+  patch: Record<string, unknown>,
+  { feature = REMOTE_ACCESS_ENABLED }: { feature?: boolean } = {},
+): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'lc-bootstrap-'));
   dirs.push(root);
   const resources = join(root, 'resources');
@@ -172,6 +191,12 @@ async function boot(patch: Record<string, unknown>): Promise<void> {
     h.finished.resolve = resolve;
   });
   vi.resetModules();
+  // `doMock`, not `mock`: this has to run *after* the reset and *before* the import, so each
+  // case gets a fresh `index.js` compiled against the flag that case is about.
+  vi.doMock('../../shared/features.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../shared/features.js')>()),
+    REMOTE_ACCESS_ENABLED: feature,
+  }));
   await import('../index.js');
   await done;
   // `edge.start()` is fired and not awaited, so give the spawn every chance to happen before
@@ -201,7 +226,7 @@ afterEach(() => {
   }
 });
 
-describe('bootstrap with remote access off — the default', () => {
+describe('bootstrap in the build as shipped', () => {
   it('does not spawn the sidecar', async () => {
     await boot({ remoteAccess: false });
 
@@ -209,6 +234,27 @@ describe('bootstrap with remote access off — the default', () => {
     // Not a log line, not a status field: the process was never created.
     expect(h.spawns).toEqual([]);
   });
+
+  /**
+   * The switch, stated as the only thing that separates this case from the one below it in
+   * "bootstrap with the remote-access feature switched on": the same planted binary and the
+   * same stored preference asking for remote access, and still no process.
+   */
+  it.skipIf(REMOTE_ACCESS_ENABLED)(
+    'does not spawn it even when the stored preference asks for it',
+    async () => {
+      await boot({ remoteAccess: true });
+
+      expect(h.fatal).toEqual([]);
+      expect(h.spawns).toEqual([]);
+      // The preference itself is untouched — the switch overrides it, it does not rewrite it,
+      // which is what makes turning the feature back on a no-op for the user.
+      const stored = JSON.parse(
+        readFileSync(join(dirs[dirs.length - 1] as string, 'LocalCast', 'config.json'), 'utf8'),
+      ) as { remoteAccess?: boolean };
+      expect(stored.remoteAccess).toBe(true);
+    },
+  );
 
   it('still tells the server to share on the local network', async () => {
     await boot({ remoteAccess: false });
@@ -236,12 +282,18 @@ describe('bootstrap with remote access off — the default', () => {
   });
 });
 
-describe('bootstrap with remote access on', () => {
-  it('spawns the sidecar', async () => {
-    await boot({ remoteAccess: true });
+/**
+ * The feature as it will be when it is switched back on.
+ *
+ * This is the control for everything above: the same code, the same planted binary, the same
+ * stored preference — only the build switch differs, and the process appears. Without it the
+ * empty-`spawns` assertions would be satisfied by a bootstrap that had stopped working
+ * entirely, and switching the feature on would be an unrehearsed change.
+ */
+describe('bootstrap with the remote-access feature switched on', () => {
+  it('spawns the sidecar when the user has asked for it', async () => {
+    await boot({ remoteAccess: true }, { feature: true });
 
-    // The control case, and the reason the assertions above are not vacuous: the same code
-    // path, the same planted binary, one flag different.
     expect(h.fatal).toEqual([]);
     expect(h.spawns).toHaveLength(1);
     expect(h.spawns[0]?.file).toMatch(/netedge\.exe$/);
@@ -250,8 +302,14 @@ describe('bootstrap with remote access on', () => {
     expect(h.spawns[0]?.args).toContain('127.0.0.1:45999');
   });
 
+  it('still does not spawn it when the user has not asked for it', async () => {
+    // The second gate on its own: with the feature available, the preference is what decides.
+    await boot({ remoteAccess: false }, { feature: true });
+    expect(h.spawns).toEqual([]);
+  });
+
   it('does not turn off local sharing to do it', async () => {
-    await boot({ remoteAccess: true });
+    await boot({ remoteAccess: true }, { feature: true });
     expect(h.serverOptions[0]?.['lan']).toBe(true);
   });
 });

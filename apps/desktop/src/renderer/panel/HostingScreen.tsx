@@ -8,7 +8,6 @@ import {
   PhoneIcon,
   ClockIcon,
   StatCard,
-  edgeStateToConnection,
   formatDuration,
   useFormat,
   useT,
@@ -20,8 +19,9 @@ import { getApi } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
 import { useConfirm, useToast } from '../lib/feedback.js';
 import { messageOf } from '../lib/useAsync.js';
+import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import { useLibrary } from '../state/library.js';
-import { isServing, useShell } from '../state/shell.js';
+import { connectionOf, isServerOn, serverAddress, useShell } from '../state/shell.js';
 import styles from './HostingScreen.module.css';
 
 const EDGE_STATE_LABEL: Record<EdgeState, MessageKey> = {
@@ -41,6 +41,13 @@ const EDGE_STATE_LABEL: Record<EdgeState, MessageKey> = {
  * Turning the server off is confirmed. It is not destructive in the sense of losing data,
  * but it is destructive in the sense the operator cares about: every device loses access
  * mid-stream, and from the phone's side that is indistinguishable from a fault.
+ *
+ * Every control on the hero — the state word, the sign-in prompt, on and off — acts on the
+ * *sidecar*, not on the local server, and there is no sidecar while remote access is switched
+ * off. So they are behind the flag: a stop button that throws and a state word stuck on
+ * «قطع» would be worse than no control at all. What stays is the part that is still true of a
+ * local-only build: whether this machine is serving, at what address, and how much is behind
+ * it.
  */
 export function HostingScreen() {
   const t = useT();
@@ -48,7 +55,7 @@ export function HostingScreen() {
   const format = useFormat();
   const confirm = useConfirm();
   const toast = useToast();
-  const { status, connectedSince } = useShell();
+  const { status, info, connectedSince } = useShell();
   const { folders, devices } = useLibrary();
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -59,8 +66,8 @@ export function HostingScreen() {
     return () => window.clearInterval(timer);
   }, [connectedSince]);
 
-  const serving = isServing(status);
-  const needsSignIn = status?.state === 'login-required';
+  const serving = isServerOn(status, info);
+  const needsSignIn = REMOTE_ACCESS_ENABLED && status?.state === 'login-required';
   const activeDevices = devices.filter((device) => device.status === 'active').length;
   const indexedFiles = folders.reduce((total, folder) => total + (folder.fileCount ?? 0), 0);
 
@@ -95,13 +102,14 @@ export function HostingScreen() {
               {serving ? c('hosting.serverOn') : c('hosting.serverOff')}
             </span>
             <span className={styles.heroState}>
-              <ConnectionDot
-                state={edgeStateToConnection(status?.state ?? 'starting')}
-                showLabel={false}
-              />
-              <span>{t(EDGE_STATE_LABEL[status?.state ?? 'starting'])}</span>
+              <ConnectionDot state={connectionOf(status, info)} showLabel={false} />
+              {/* The seven-state edge vocabulary («ورود لازم است», «در حال گرفتن گواهی») is
+                  the sidecar's, and describes nothing in a local-only build. */}
+              {REMOTE_ACCESS_ENABLED ? (
+                <span>{t(EDGE_STATE_LABEL[status?.state ?? 'starting'])}</span>
+              ) : null}
             </span>
-            {status?.errorMessage ? (
+            {REMOTE_ACCESS_ENABLED && status?.errorMessage ? (
               <span className={styles.heroError} role="alert">
                 {status.errorMessage}
               </span>
@@ -112,8 +120,8 @@ export function HostingScreen() {
           </div>
 
           <div className={styles.heroActions}>
-            <AddressField host={status?.host ?? null} />
-            {needsSignIn ? (
+            <AddressField host={serverAddress(status, info)} />
+            {!REMOTE_ACCESS_ENABLED ? null : needsSignIn ? (
               <Button variant="primary" loading={busy} onClick={() => void run(() => getApi().edge.login())}>
                 {c('hosting.signIn')}
               </Button>

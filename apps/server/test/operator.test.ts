@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PRINTING_ENABLED } from '../src/modules/features.js';
+import { PRINTING_DISABLED_CODE } from '../src/modules/print/disabled.js';
 import {
   bearer,
   cleanupTempDirs,
@@ -174,6 +176,30 @@ describe('the operator printer list', () => {
     device = await pairDevice(ts);
   });
 
+  /**
+   * The device half of these tests, in whichever form this build serves it.
+   *
+   * `/operator/printers` is a core route that reads the table directly, so the operator's view
+   * of the printer list survives the printing switch untouched — that seam is the reason the
+   * hide flag keeps working here at all. `GET /api/v1/printers` belongs to the print module,
+   * and with `PRINTING_ENABLED` false that module is not registered: the stand-in answers a
+   * typed 503 instead. Asserting the switched-off answer rather than skipping keeps this test
+   * saying something true in both builds; `null` means "checked, and this build does not serve
+   * a list", which is not the same as an empty one.
+   */
+  async function devicePrinterNames(): Promise<string[] | null> {
+    const res = await ts.fetch('/api/v1/printers', { headers: bearer(device.accessToken) });
+    if (!PRINTING_ENABLED) {
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe(PRINTING_DISABLED_CODE);
+      return null;
+    }
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { printers: { name: string }[] };
+    return body.printers.map((printer) => printer.name);
+  }
+
   it('shows a hidden printer that the device API does not', async () => {
     addPrinter('Office Laser', true);
     const hidden = addPrinter('Hidden Plotter', false);
@@ -184,10 +210,8 @@ describe('the operator printer list', () => {
     expect(operator.printers.map((p) => p.enabled)).toEqual([false, true]);
     expect(operator.printers.some((p) => p.id === hidden)).toBe(true);
 
-    const client = await ts.json<{ printers: { name: string }[] }>('/api/v1/printers', {
-      headers: bearer(device.accessToken),
-    });
-    expect(client.printers.map((p) => p.name)).toEqual(['Office Laser']);
+    const names = await devicePrinterNames();
+    if (names) expect(names).toEqual(['Office Laser']);
     // The seeded rows are fresh, so nothing shelled out to Windows on either read.
     expect(ps.scripts).toEqual([]);
   });
@@ -224,10 +248,8 @@ describe('the operator printer list', () => {
     expect(patched.status).toBe(200);
     expect(await patched.json()).toMatchObject({ enabled: false });
 
-    const client = await ts.json<{ printers: unknown[] }>('/api/v1/printers', {
-      headers: bearer(device.accessToken),
-    });
-    expect(client.printers).toEqual([]);
+    const names = await devicePrinterNames();
+    if (names) expect(names).toEqual([]);
   });
 });
 

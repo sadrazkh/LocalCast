@@ -82,8 +82,20 @@ export async function listActivity(limit = 100): Promise<ActivityEntry[]> {
  * that the renderer must not reformat what the server minted), and an object is serialised
  * once, here, rather than in three call sites.
  */
+/**
+ * What the QR image should encode.
+ *
+ * The link first, always. It is an ordinary URL, so the phone's own camera opens it and the
+ * web app loads at the right address with the pairing details in the fragment — no scanner
+ * inside LocalCast, no camera permission, no secure context needed to *begin*.
+ *
+ * The JSON payload is the fallback for a machine with no local address to publish. It can
+ * only be read by LocalCast's own scanner, which is exactly the trap this replaced: encoding
+ * it meant a code that a camera app looks at and does nothing with.
+ */
 export function qrPayloadOf(minted: PairingMintResult): string {
-  const loose = minted as unknown as { payload?: unknown; qr?: unknown };
+  const loose = minted as unknown as { link?: unknown; payload?: unknown; qr?: unknown };
+  if (typeof loose.link === 'string' && loose.link.length > 0) return loose.link;
   if (typeof loose.payload === 'string') return loose.payload;
   if (loose.qr && typeof loose.qr === 'object') return JSON.stringify(loose.qr);
   return '';
