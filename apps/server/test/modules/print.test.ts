@@ -11,9 +11,13 @@ import {
   syncPrinters,
 } from '../../src/modules/print/enumerate.js';
 import {
+  assertFallbackCanHonour,
   buildPrintSettings,
   buildSumatraArgs,
   classifyJobStatus,
+  listSpoolerJobs,
+  LIST_JOBS_SCRIPT,
+  PRINT_TO_SCRIPT,
 } from '../../src/modules/print/spooler.js';
 import { assertPrintable } from '../../src/modules/print/routes.js';
 import type { ServerModule } from '../../src/kernel.js';
@@ -40,8 +44,12 @@ interface FakeOptions {
   printersFails?: boolean;
   /** One entry per `Get-PrintJob`; the last is repeated once the list runs out. */
   spooler?: SpoolerJobJson[][];
+  /** `Get-PrintJob` throws, which is a queue that could not be read — not an empty one. */
+  spoolerUnreadable?: boolean;
   onSubmit?: () => Promise<void> | void;
   submitFails?: boolean;
+  /** The shell has no `PrintTo` handler for the type, so `Start-Process` throws. */
+  printToFails?: boolean;
 }
 
 function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: ExecCall[] } {
@@ -56,6 +64,7 @@ function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: E
     if (script?.includes('Remove-PrintJob')) return { stdout: '', stderr: '' };
 
     if (script?.includes('Get-PrintJob')) {
+      if (options.spoolerUnreadable) throw new Error('The specified printer was not found.');
       const next = spooler.length > 1 ? spooler.shift() : spooler[0];
       return { stdout: JSON.stringify(next ?? []), stderr: '' };
     }
@@ -63,6 +72,15 @@ function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: E
     if (script?.includes('Get-Printer ')) {
       if (options.printersFails) throw new Error('Get-Printer is not recognized');
       return { stdout: options.printersJson ?? '[]', stderr: '' };
+    }
+
+    // The helper-free fallback: `Start-Process -Verb PrintTo`.
+    if (script?.includes('Start-Process')) {
+      await options.onSubmit?.();
+      if (options.printToFails) {
+        throw new Error('This file does not have an app associated with it for this action.');
+      }
+      return { stdout: '', stderr: '' };
     }
 
     // Anything else is SumatraPDF.
@@ -177,6 +195,96 @@ describe('spooler status', () => {
     expect(classifyJobStatus('PaperOut')).toBe('error');
     expect(classifyJobStatus('Deleting')).toBe('cancelled');
     expect(classifyJobStatus('Printed')).toBe('done');
+  });
+
+  it('asks PowerShell to stringify JobStatus, because ConvertTo-Json emits the raw enum', () => {
+    // Observed against the real spooler: without the cast a spooling job serialises as
+    // {"Id":6,"JobStatus":8} and a printing one as 8216, and every status then classifies as
+    // "still printing" — so a jammed printer looked healthy until the ten-minute timeout.
+    expect(LIST_JOBS_SCRIPT).toContain('[string]$_.JobStatus');
+    expect(LIST_JOBS_SCRIPT).not.toContain('Select-Object Id,DocumentName,JobStatus');
+  });
+
+  it('still classifies the raw integer bitmask correctly', () => {
+    // The exact values captured from Get-PrintJob on this machine.
+    expect(classifyJobStatus('8')).toBe('printing'); // Spooling
+    expect(classifyJobStatus('8208')).toBe('printing'); // Printing, Retained
+    expect(classifyJobStatus('8216')).toBe('printing'); // Spooling, Printing, Retained
+    // …and the outcomes that used to be invisible.
+    expect(classifyJobStatus('2')).toBe('error'); // Error
+    expect(classifyJobStatus('64')).toBe('error'); // PaperOut
+    expect(classifyJobStatus('512')).toBe('error'); // Blocked
+    expect(classifyJobStatus('4')).toBe('cancelled'); // Deleting
+    expect(classifyJobStatus('128')).toBe('done'); // Printed
+    expect(classifyJobStatus('4096')).toBe('done'); // Complete
+    expect(classifyJobStatus('0')).toBe('printing'); // Normal
+  });
+
+  it('tells an empty queue apart from one it could not read', async () => {
+    const empty: ExecFileFn = async () => ({ stdout: '', stderr: '' });
+    await expect(listSpoolerJobs(empty, 'Whatever')).resolves.toEqual({
+      readable: true,
+      jobs: [],
+    });
+
+    const broken: ExecFileFn = async () => {
+      throw new Error('The specified printer was not found.');
+    };
+    await expect(listSpoolerJobs(broken, 'Whatever')).resolves.toEqual({
+      readable: false,
+      jobs: [],
+    });
+  });
+});
+
+describe('the helper-free fallback', () => {
+  it('accepts a plain single-copy job', () => {
+    expect(() =>
+      assertFallbackCanHonour({ copies: 1, color: 'mono', duplex: 'simplex' }, 'C:/vendor'),
+    ).not.toThrow();
+    // Colour alone is not refused: PrintTo uses the printer's own default, which is the
+    // closest honest answer and cannot print the wrong number of pages.
+    expect(() =>
+      assertFallbackCanHonour({ copies: 1, color: 'color', duplex: 'simplex' }, 'C:/vendor'),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [{ copies: 2, color: 'mono', duplex: 'simplex' } as const, /more than one copy/],
+    [{ copies: 1, color: 'mono', duplex: 'long' } as const, /double-sided/],
+    [{ copies: 1, color: 'mono', duplex: 'simplex', pageRange: '2-3' } as const, /page range/],
+  ])('refuses what PrintTo cannot express: %o', (input, pattern) => {
+    expect(() => assertFallbackCanHonour(input, 'C:/vendor')).toThrow(pattern);
+    // The message has to name the helper, because installing it is the fix.
+    expect(() => assertFallbackCanHonour(input, 'C:/vendor')).toThrow(/SumatraPDF\.exe/);
+  });
+
+  it('passes the printer and path as environment data, never as script text', () => {
+    expect(PRINT_TO_SCRIPT).toContain('$env:LC_PRINTER');
+    expect(PRINT_TO_SCRIPT).toContain('$env:LC_FILE');
+    expect(PRINT_TO_SCRIPT).toContain('-Verb PrintTo');
+  });
+});
+
+describe('printer enumeration script', () => {
+  it('consults WorkOffline, not just PrinterStatus', () => {
+    // Observed on a real machine: an HP that Windows lists as Offline still reports
+    // PrinterStatus = Normal. Reading only the status advertised it as online.
+    expect(GET_PRINTERS_SCRIPT).toContain('WorkOffline');
+  });
+
+  it('maps a printer Windows calls offline via the flag alone', () => {
+    const rows = parsePrinters(
+      JSON.stringify([
+        { Name: 'Working', Status: 'Normal', Online: true },
+        // What the fixed script emits for the WorkOffline case.
+        { Name: 'Unplugged', Status: 'Offline', Online: false },
+      ]),
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({ name: 'Working', online: true, status: 'Normal' }),
+      expect.objectContaining({ name: 'Unplugged', online: false, status: 'Offline' }),
+    ]);
   });
 });
 
@@ -427,16 +535,59 @@ describe('POST /print', () => {
     expect(harness.ctx.db.prepare(`SELECT COUNT(*) AS n FROM print_jobs`).get()).toEqual({ n: 0 });
   });
 
-  it('fails the job with a message naming the missing helper', async () => {
+  it('prints through the shell PrintTo verb when the helper is missing', async () => {
+    // Windows registers `printto` for images itself, and PDF readers register it for PDFs, so
+    // a missing SumatraPDF is no longer a dead end for a plain one-copy job.
+    const calls = await boot({
+      withBinary: false,
+      spooler: [[], [{ Id: 31, JobStatus: 'Printing' }], []],
+    });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'done');
+    const printTo = calls.find((call) => call.script?.includes('Start-Process'));
+    expect(printTo?.script).toContain('-Verb PrintTo');
+    // Same rule as everywhere else: the printer name and path are data, not script text.
+    expect(printTo?.script).not.toContain(printerName);
+    expect(printTo?.env?.['LC_PRINTER']).toBe(printerName);
+    expect(printTo?.env?.['LC_FILE']).toMatch(/print-.*\.pdf$/);
+  });
+
+  it('refuses, naming the helper, when the fallback cannot honour the request', async () => {
+    // `PrintTo` takes a file and a printer and nothing else. Printing one copy when two were
+    // asked for would be worse than saying so.
     await boot({ withBinary: false });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId }, copies: 2 })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'error');
+    expect(errorOf(job.id)).toMatch(/SumatraPDF\.exe/);
+    expect(errorOf(job.id)).toMatch(/more than one copy/);
+    expect(statusOf(job.id)).not.toBe('done');
+  });
+
+  it('fails loudly when neither the helper nor a PrintTo handler exists', async () => {
+    await boot({ withBinary: false, printToFails: true });
     const { job } = (await (
       await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
     ).json()) as { job: { id: string } };
 
     await settle(job.id, 'error');
-    expect(errorOf(job.id)).toMatch(/SumatraPDF\.exe.*missing/);
+    expect(errorOf(job.id)).toMatch(/Windows could not print this file/);
     // The important half: it did not report success.
     expect(statusOf(job.id)).not.toBe('done');
+  });
+
+  it('does not call the fallback at all when the helper is present', async () => {
+    const calls = await boot({ spooler: [[], [{ Id: 32, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+    expect(calls.some((call) => call.script?.includes('Start-Process'))).toBe(false);
   });
 
   it('reports the spooler message when the printer errors', async () => {
@@ -539,6 +690,83 @@ describe('the queue', () => {
     await settle(job.id, 'cancelled');
     expect(calls.some((call) => call.script?.includes('Remove-PrintJob'))).toBe(true);
     expect(calls.find((call) => call.script?.includes('Remove-PrintJob'))?.env?.['LC_JOB_ID']).toBe('21');
+  });
+
+  it('catches a job that is only in the queue while it is being submitted', async () => {
+    // The race, exactly. Measured on a real machine a one-page job is spooled, rendered and
+    // gone in ~1.4 s while one `Get-PrintJob` costs ~0.9 s, so a discovery that only starts
+    // after the submission returns finds an empty queue — no `windows_job_id`, nothing to
+    // cancel, and an outcome that was assumed instead of read.
+    let release = (): void => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    let submitting = false;
+    let released = false;
+
+    const exec: ExecFileFn = async (file, args) => {
+      const script = file === POWERSHELL ? args[args.length - 1] ?? '' : '';
+      if (script.includes('Get-PrintJob')) {
+        // Visible only for the window in which the document is being handed to Windows.
+        return submitting && !released
+          ? { stdout: JSON.stringify([{ Id: 99, JobStatus: 'Spooling' }]), stderr: '' }
+          : { stdout: '', stderr: '' };
+      }
+      if (script.includes('Get-Printer ')) return { stdout: '[]', stderr: '' };
+      submitting = true;
+      await held;
+      released = true;
+      return { stdout: '', stderr: '' };
+    };
+
+    await writeFile(`${harness.ctx.paths.vendorDir}/SumatraPDF.exe`, 'not really a binary');
+    modul = createPrintModule({ exec, pollIntervalMs: 1, discoverAttempts: 3 });
+    server = await harness.serve([modul]);
+
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await vi.waitFor(() => expect(statusOf(job.id)).toBe('printing'), { interval: 5 });
+    release();
+    await settle(job.id, 'done');
+
+    // Found while it was in flight, rather than assumed after it had gone.
+    expect(
+      harness.ctx.db.prepare(`SELECT windows_job_id FROM print_jobs WHERE id = ?`).get(job.id),
+    ).toEqual({ windows_job_id: 99 });
+  });
+
+  it('does not call a job done when the queue stopped answering', async () => {
+    // An empty `Get-PrintJob` and a failing one used to be the same empty array, and an
+    // absent job is read as a finished one — so a dead spooler reported a successful print.
+    let calls = 0;
+    const exec: ExecFileFn = async (file, args) => {
+      const script = file === POWERSHELL ? args[args.length - 1] ?? '' : '';
+      if (script.includes('Get-PrintJob')) {
+        calls += 1;
+        // 1: the queue before submitting. 2: discovery finds the new job. Then the spooler
+        // goes away, which must not be mistaken for the job having finished.
+        if (calls === 1) return { stdout: '', stderr: '' };
+        if (calls === 2) {
+          return { stdout: JSON.stringify([{ Id: 77, JobStatus: 'Printing' }]), stderr: '' };
+        }
+        throw new Error('The specified printer was not found.');
+      }
+      if (script.includes('Get-Printer ')) return { stdout: '[]', stderr: '' };
+      return { stdout: '', stderr: '' };
+    };
+
+    await writeFile(`${harness.ctx.paths.vendorDir}/SumatraPDF.exe`, 'not really a binary');
+    modul = createPrintModule({ exec, pollIntervalMs: 0, discoverAttempts: 3 });
+    server = await harness.serve([modul]);
+
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'error');
+    expect(errorOf(job.id)).toMatch(/stopped responding/);
   });
 
   it('refuses to cancel a job that has already finished', async () => {

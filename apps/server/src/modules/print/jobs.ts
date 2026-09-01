@@ -7,13 +7,14 @@ import type { ServerContext } from '../../kernel.js';
 import type { ExecFileFn } from './exec.js';
 import { defaultExecFile } from './exec.js';
 import {
+  assertFallbackCanHonour,
   buildPrintSettings,
   classifyJobStatus,
   findSumatra,
   listSpoolerJobs,
-  missingSpoolerError,
   removeSpoolerJob,
   submitToSpooler,
+  submitViaPrintTo,
 } from './spooler.js';
 
 /**
@@ -223,49 +224,96 @@ export class PrintQueue {
     }
 
     const sumatra = await findSumatra(this.ctx.paths.vendorDir);
-    if (!sumatra) {
-      const missing = missingSpoolerError(this.ctx.paths.vendorDir);
-      this.ctx.log.error('print helper missing', {
-        code: missing.code,
-        vendorDir: this.ctx.paths.vendorDir,
-      });
-      await this.cleanupSpool(spoolPath);
-      this.fail(jobId, missing.message);
-      return;
-    }
 
-    let settings: string;
+    const wanted = {
+      copies: row.copies,
+      color: row.color,
+      duplex: row.duplex,
+      pageRange: row.page_range,
+    };
+
+    // Settings are only expressible through the helper. Without it the job still prints —
+    // through the shell's `PrintTo` verb — but only if it asked for nothing the verb cannot
+    // carry, which `assertFallbackCanHonour` decides.
+    let settings = '';
     try {
-      settings = buildPrintSettings({
-        copies: row.copies,
-        color: row.color,
-        duplex: row.duplex,
-        pageRange: row.page_range,
-      });
+      if (sumatra) settings = buildPrintSettings(wanted);
+      else assertFallbackCanHonour(wanted, this.ctx.paths.vendorDir);
     } catch (err) {
+      if (!sumatra) {
+        this.ctx.log.error('print helper missing', { vendorDir: this.ctx.paths.vendorDir });
+      }
       await this.cleanupSpool(spoolPath);
       this.fail(jobId, describe(err));
       return;
     }
 
-    const before = new Set((await listSpoolerJobs(this.exec, printerName)).map((job) => job.id));
+    const seen = await listSpoolerJobs(this.exec, printerName);
+    const before = new Set(seen.jobs.map((job) => job.id));
 
     this.transition(jobId, 'printing', { started_at: this.now() });
 
+    /**
+     * Discovery runs *alongside* the submission, not after it.
+     *
+     * Waiting for the submission to return and only then looking loses the job whenever it
+     * is short: measured against the real spooler a one-page job is spooled, rendered and
+     * gone in about 1.4 s while a single `Get-PrintJob` costs ~0.9 s, so the queue is
+     * already empty by the time the first look happens. The job then has no
+     * `windows_job_id`, cannot be cancelled, and its outcome is assumed rather than read —
+     * which is the whole thing this module exists to avoid. Polling while the document is
+     * still being handed over is what actually catches it.
+     */
+    let submissionInFlight = true;
+    // `PrintTo` is fire-and-forget: `Start-Process` returns as soon as the shell has launched
+    // the viewer, and measured against the real spooler the job took about six seconds to
+    // appear afterwards. SumatraPDF's `-exit-when-done` has already waited, so it needs far
+    // fewer looks once its submission has settled.
+    const trailingAttempts = sumatra ? this.discoverAttempts : this.discoverAttempts * 4;
+    const discovery = this.discoverJobId(
+      printerName,
+      before,
+      trailingAttempts,
+      () => submissionInFlight,
+    );
+
+    let submitFailure: unknown = null;
     try {
-      await submitToSpooler(this.exec, {
-        sumatraPath: sumatra,
-        printerName,
-        settings,
-        filePath: spoolPath,
-      });
+      if (sumatra) {
+        await submitToSpooler(this.exec, {
+          sumatraPath: sumatra,
+          printerName,
+          settings,
+          filePath: spoolPath,
+        });
+      } else {
+        this.ctx.log.info('printing without the bundled helper, through the PrintTo verb', {
+          jobId,
+        });
+        await submitViaPrintTo(this.exec, { printerName, filePath: spoolPath });
+      }
     } catch (err) {
+      submitFailure = err;
+    } finally {
+      submissionInFlight = false;
+    }
+
+    // Awaited either way: an orphaned poll loop would keep spawning PowerShell after the job
+    // it belongs to has already been failed and reported.
+    const windowsJobId = await discovery;
+
+    if (submitFailure !== null) {
       await this.cleanupSpool(spoolPath);
-      this.fail(jobId, `The print helper failed: ${describe(err)}`);
+      this.fail(
+        jobId,
+        sumatra
+          ? `The print helper failed: ${describe(submitFailure)}`
+          : `Windows could not print this file: ${describe(submitFailure)}. ` +
+              'Install the print helper to print this type.',
+      );
       return;
     }
 
-    const windowsJobId = await this.discoverJobId(printerName, before);
     if (windowsJobId !== null) {
       this.ctx.db
         .prepare(`UPDATE print_jobs SET windows_job_id = ? WHERE id = ?`)
@@ -280,17 +328,35 @@ export class PrintQueue {
   }
 
   /**
-   * Finds the spooler job SumatraPDF just created by diffing the queue.
+   * Finds the spooler job the submission just created by diffing the queue.
    *
-   * SumatraPDF reports nothing about what it submitted, and there is no other handle: the
+   * Neither submission path reports what it handed over, and there is no other handle: the
    * only way to name the job the spooler now owns is to know which ids were there before.
+   *
+   * `submitting` keeps the loop going for as long as the document is still being handed to
+   * Windows, however long that takes, and `trailingAttempts` is how many more looks it gets
+   * afterwards. The overall cap exists so a submission that never settles cannot leave a
+   * poll loop spawning PowerShell for ever.
    */
-  private async discoverJobId(printerName: string, before: Set<number>): Promise<number | null> {
-    for (let attempt = 0; attempt < this.discoverAttempts; attempt += 1) {
-      const jobs = await listSpoolerJobs(this.exec, printerName);
-      const fresh = jobs.find((job) => !before.has(job.id));
+  private async discoverJobId(
+    printerName: string,
+    before: Set<number>,
+    trailingAttempts: number,
+    submitting: () => boolean,
+  ): Promise<number | null> {
+    const cap = Math.max(trailingAttempts, 1) * 40;
+    let trailing = 0;
+
+    for (let attempt = 0; attempt < cap; attempt += 1) {
+      const queue = await listSpoolerJobs(this.exec, printerName);
+      const fresh = queue.jobs.find((job) => !before.has(job.id));
       if (fresh) return fresh.id;
-      if (attempt + 1 < this.discoverAttempts) await this.sleep(this.pollIntervalMs);
+
+      if (!submitting()) {
+        trailing += 1;
+        if (trailing >= trailingAttempts) return null;
+      }
+      await this.sleep(this.pollIntervalMs);
     }
     return null;
   }
@@ -301,14 +367,22 @@ export class PrintQueue {
     windowsJobId: number | null,
   ): Promise<{ status: PrintJobStatus; message: string | null }> {
     if (windowsJobId === null) {
-      // The queue never showed the job. On a fast local printer it can be spooled, rendered
-      // and gone before the first poll, and the helper did exit successfully — so this is a
-      // completed job, logged because it is also what a silently dropped job looks like.
+      // The queue never showed the job. Measured on this machine a one-page job to a local
+      // printer is spooled, rendered and gone in about 1.4 s while a single `Get-PrintJob`
+      // costs ~0.9 s, so losing the race is ordinary rather than exotic — and submission did
+      // succeed. It is reported as done, and logged, because it is also what a silently
+      // dropped job looks like and the log is the only place the two can be told apart.
       this.ctx.log.warn('print job left the spooler before it could be observed', { jobId });
       return { status: 'done', message: null };
     }
 
     const deadline = this.now() + this.pollTimeoutMs;
+    // A queue that cannot be read says nothing about the job. One failed reading is a blip
+    // worth retrying; a run of them means the spooler is gone, and that is an error rather
+    // than the silent "done" an unreadable queue used to produce.
+    let unreadable = 0;
+    const unreadableLimit = 3;
+
     while (this.now() < deadline) {
       if (this.cancelRequested.has(jobId)) {
         try {
@@ -319,11 +393,27 @@ export class PrintQueue {
         return { status: 'cancelled', message: null };
       }
 
-      const jobs = await listSpoolerJobs(this.exec, printerName);
-      const mine = jobs.find((job) => job.id === windowsJobId);
+      const queue = await listSpoolerJobs(this.exec, printerName);
+      if (!queue.readable) {
+        unreadable += 1;
+        if (unreadable >= unreadableLimit) {
+          return {
+            status: 'error',
+            message:
+              'The Windows print queue stopped responding, so LocalCast cannot say whether this ' +
+              'job printed. Check the printer before sending it again.',
+          };
+        }
+        if (this.disposed) return { status: 'printing', message: null };
+        await this.sleep(this.pollIntervalMs);
+        continue;
+      }
+      unreadable = 0;
+
+      const mine = queue.jobs.find((job) => job.id === windowsJobId);
       if (!mine) {
-        // Gone from the queue is the spooler saying it is finished with it. This — not a
-        // zero exit code from the helper — is what "انجام‌شده" is allowed to mean.
+        // Gone from a queue we could actually read is the spooler saying it is finished with
+        // it. This — not a zero exit code from the helper — is what "انجام‌شده" may mean.
         return { status: 'done', message: null };
       }
 

@@ -74,11 +74,62 @@ export async function findSumatra(vendorDir: string): Promise<string | null> {
   return null;
 }
 
-export function missingSpoolerError(vendorDir: string): ApiException {
-  return new ApiException(
+// ── the helper-free fallback ─────────────────────────────────────────────────
+
+/**
+ * Printing through the shell's `PrintTo` verb, which needs no bundled binary.
+ *
+ * Windows itself registers `printto` for images — `.png`, `.jpg` and `.tif` all resolve to
+ * `rundll32 shimgvw.dll,ImageView_PrintTo` on a stock install — so images print out of the
+ * box with nothing vendored at all. PDFs are different: `printto` for `.pdf` only exists if
+ * some installed reader registered it. Acrobat does; **Edge, which is the default PDF handler
+ * on a clean Windows, does not** (its ProgId `MSEdgePDF` exposes only `open` and `runas`).
+ * That is why SumatraPDF is still the supported path for PDFs rather than dead weight.
+ *
+ * `Start-Process` throws when no handler is registered, which is the signal the caller needs:
+ * it fails loudly instead of reporting a job nobody printed.
+ */
+export const PRINT_TO_SCRIPT =
+  "Start-Process -FilePath $env:LC_FILE -Verb PrintTo " +
+  "-ArgumentList ('\"' + $env:LC_PRINTER + '\"') -WindowStyle Hidden -ErrorAction Stop";
+
+/**
+ * What the fallback cannot do.
+ *
+ * `PrintTo` hands the file to whichever application owns the type and gives no way to ask for
+ * copies, duplex, colour or a page range — the document prints with the printer's own
+ * defaults. Silently ignoring those would print one copy when two were asked for, or four
+ * hundred pages when page 3 was asked for, so a request that depends on them is refused with
+ * an explanation instead.
+ */
+export function assertFallbackCanHonour(input: PrintSettingsInput, vendorDir: string): void {
+  const unsupported: string[] = [];
+  if (input.pageRange && input.pageRange.trim() !== '') unsupported.push('a page range');
+  if (input.copies > 1) unsupported.push('more than one copy');
+  if (input.duplex !== 'simplex') unsupported.push('double-sided printing');
+  if (unsupported.length === 0) return;
+
+  throw new ApiException(
     ErrorCode.SPOOLER_FAILED,
-    `The print helper (${SUMATRA_BINARY}) is missing from ${vendorDir}. Reinstall LocalCast to restore it; nothing was sent to the printer.`,
+    `Without the print helper (${SUMATRA_BINARY} in ${vendorDir}) LocalCast prints through Windows, ` +
+      `which cannot be asked for ${unsupported.join(' or ')}. Print with the printer's own settings, ` +
+      'or install the print helper. Nothing was sent to the printer.',
   );
+}
+
+export interface PrintToInput {
+  printerName: string;
+  filePath: string;
+  timeoutMs?: number;
+}
+
+export async function submitViaPrintTo(exec: ExecFileFn, input: PrintToInput): Promise<void> {
+  await exec(POWERSHELL, powershellArgs(PRINT_TO_SCRIPT), {
+    timeoutMs: input.timeoutMs ?? 60_000,
+    // Same rule as everywhere else in this module: the printer name and the path are data in
+    // the environment, never text spliced into a script.
+    env: { ...process.env, LC_PRINTER: input.printerName, LC_FILE: input.filePath },
+  });
 }
 
 export interface SubmitInput {
@@ -106,9 +157,20 @@ export async function submitToSpooler(exec: ExecFileFn, input: SubmitInput): Pro
 
 // ── spooler status ───────────────────────────────────────────────────────────
 
+/**
+ * Note the `[string]` casts. `JobStatus` is a .NET flags enum, and `ConvertTo-Json` serialises
+ * an enum as its **integer** value, not its name: a real spooling job comes back as
+ * `{"Id":6,"JobStatus":8}`, and a printing one as `8216` (Spooling|Printing|Retained). Casting
+ * first is what turns those into the `"Spooling, Printing, Retained"` text `classifyJobStatus`
+ * reads. Without the cast every status is an unrecognised number, so a job that ran out of
+ * paper looks exactly like a job that is still going — which is how a jammed printer used to
+ * sit at "در حال چاپ" until the ten-minute timeout gave up on it.
+ */
 export const LIST_JOBS_SCRIPT =
   'Get-PrintJob -PrinterName $env:LC_PRINTER -ErrorAction Stop | ' +
-  'Select-Object Id,DocumentName,JobStatus | ConvertTo-Json -Compress';
+  'ForEach-Object { [pscustomobject]@{ ' +
+  'Id=[int]$_.Id; DocumentName=[string]$_.DocumentName; JobStatus=[string]$_.JobStatus } } | ' +
+  'ConvertTo-Json -Compress';
 
 export const REMOVE_JOB_SCRIPT =
   'Remove-PrintJob -PrinterName $env:LC_PRINTER -ID ([int]$env:LC_JOB_ID) -ErrorAction Stop';
@@ -117,6 +179,19 @@ export interface SpoolerJob {
   id: number;
   documentName: string;
   status: string;
+}
+
+/**
+ * A queue reading, and whether it is a reading at all.
+ *
+ * "The queue is empty" and "the queue could not be read" are the same bytes on the wire — an
+ * empty `Get-PrintJob` writes nothing to stdout — but they mean opposite things to a watcher
+ * that treats an absent job as a finished one. Keeping `readable` separate is what stops a
+ * spooler that has stopped answering from being reported to the user as a successful print.
+ */
+export interface SpoolerQueue {
+  readable: boolean;
+  jobs: SpoolerJob[];
 }
 
 /**
@@ -129,7 +204,7 @@ export interface SpoolerJob {
 export async function listSpoolerJobs(
   exec: ExecFileFn,
   printerName: string,
-): Promise<SpoolerJob[]> {
+): Promise<SpoolerQueue> {
   let stdout: string;
   try {
     ({ stdout } = await exec(POWERSHELL, powershellArgs(LIST_JOBS_SCRIPT), {
@@ -137,9 +212,11 @@ export async function listSpoolerJobs(
       env: { ...process.env, LC_PRINTER: printerName },
     }));
   } catch {
-    // `Get-PrintJob` throws when the queue is empty on some driver versions. An empty queue
-    // and an unreadable queue look the same here; the caller treats both as "no job".
-    return [];
+    // Measured against the real spooler, `Get-PrintJob` on an empty queue exits 0 and writes
+    // nothing — it does not throw. So reaching here means the query genuinely failed: the
+    // printer was deleted, the spooler service is down, or PowerShell could not start. That
+    // is emphatically not "the job finished".
+    return { readable: false, jobs: [] };
   }
 
   const rows = parsePowerShellJson<Record<string, unknown>>(stdout);
@@ -154,7 +231,7 @@ export async function listSpoolerJobs(
       status: String(row['JobStatus'] ?? ''),
     });
   }
-  return jobs;
+  return { readable: true, jobs };
 }
 
 export async function removeSpoolerJob(
@@ -171,14 +248,47 @@ export async function removeSpoolerJob(
 export type SpoolerOutcome = 'printing' | 'done' | 'error' | 'cancelled';
 
 /**
- * Reads a `JobStatus` string into an outcome.
+ * The bits behind the flag names, straight out of `JOB_STATUS_*` in winspool.
  *
- * `JobStatus` is a flags value that stringifies as a comma list, so `Printing, Retained` and
- * `Error, Offline` both occur. Anything containing an error flag is an error, a delete flag
- * is a cancellation, and everything else is still in the queue.
+ * `LIST_JOBS_SCRIPT` casts the enum to text so the names arrive, but the numeric form is
+ * handled too: it is what the uncast script produced, it is what an older PowerShell or a
+ * different serialiser can still emit, and misreading a bitmask as "still printing" is the
+ * one failure mode that makes a broken job look healthy.
+ */
+const JOB_STATUS_BITS = {
+  error: 0x0000_0002,
+  deleting: 0x0000_0004,
+  paperOut: 0x0000_0040,
+  printed: 0x0000_0080,
+  deleted: 0x0000_0100,
+  blocked: 0x0000_0200,
+  complete: 0x0000_1000,
+} as const;
+
+/**
+ * Reads a `JobStatus` into an outcome.
+ *
+ * `JobStatus` is a flags value. Cast to text it stringifies as a comma list — `Printing,
+ * Retained` and `Error, Offline` both occur — and uncast it arrives as an integer bitmask.
+ * Both spellings are accepted. Anything carrying an error flag is an error, a delete flag is
+ * a cancellation, and everything else is still in the queue.
  */
 export function classifyJobStatus(status: string): SpoolerOutcome {
-  const flags = status
+  const text = status.trim();
+
+  // A bare integer is the flags value itself; `Number()` would also accept ' 12 ' and '0x8',
+  // so the shape is checked before it is trusted.
+  if (/^\d+$/.test(text)) {
+    const bits = Number(text);
+    if (bits & (JOB_STATUS_BITS.error | JOB_STATUS_BITS.paperOut | JOB_STATUS_BITS.blocked)) {
+      return 'error';
+    }
+    if (bits & (JOB_STATUS_BITS.deleting | JOB_STATUS_BITS.deleted)) return 'cancelled';
+    if (bits & (JOB_STATUS_BITS.complete | JOB_STATUS_BITS.printed)) return 'done';
+    return 'printing';
+  }
+
+  const flags = text
     .toLowerCase()
     .split(',')
     .map((flag) => flag.trim());

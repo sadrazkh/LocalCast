@@ -16,14 +16,23 @@ export const GET_PRINTERS_SCRIPT = [
   "Get-CimInstance -ClassName Win32_Printer -ErrorAction SilentlyContinue | ForEach-Object { $w[$_.Name]=$_ };",
   'Get-Printer -ErrorAction Stop | ForEach-Object {',
   '$c=$w[$_.Name];',
+  '$s=[string]$_.PrinterStatus;',
+  // `PrinterStatus` alone is not enough. Measured on a real machine, an HP that Windows
+  // itself lists as "Offline" still reports `PrinterStatus = Normal`; what Windows shows the
+  // user is `Win32_Printer.WorkOffline`, the "Use Printer Offline" flag. Reading only the
+  // status marked that printer online and invited jobs into a queue nothing would drain.
+  '$wo=[bool]($c -and $c.WorkOffline);',
+  "$off=[bool]($wo -or ($s -in @('Offline','Error','NotAvailable','ServerOffline')));",
   '[pscustomobject]@{',
   'Name=$_.Name;',
   'Driver=[string]$_.DriverName;',
-  'Status=[string]$_.PrinterStatus;',
+  // Reporting "Normal" for a printer Windows calls offline is the same lie one level down,
+  // so the flag wins over the enum in the text the user is shown too.
+  "Status=[string]$(if($wo -and $s -eq 'Normal'){'Offline'}else{$s});",
   'IsDefault=[bool]($c -and $c.Default);',
   "Color=[bool]($c -and ($c.CapabilityDescriptions -contains 'Color'));",
   "Duplex=[bool]($c -and ($c.CapabilityDescriptions -contains 'Duplex'));",
-  "Online=[bool]([string]$_.PrinterStatus -notin @('Offline','Error','NotAvailable'))",
+  'Online=[bool](-not $off)',
   '}',
   '} | ConvertTo-Json -Compress',
 ].join('');
