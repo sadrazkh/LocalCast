@@ -3,7 +3,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node", "electron"]
+    "types": ["node"]
   },
-  "include": ["src/main/**/*", "src/shared/**/*"]
+  "//": "src/preload is here, not in the renderer project: it is CommonJS running in Electron's preload context. Leaving it out compiles no preload.cjs at all, and the window then fails to open with a path error rather than a build error.",
+  "include": ["src/main/**/*", "src/shared/**/*", "src/preload/**/*"],
+  "exclude": ["src/**/__tests__/**"]
 }

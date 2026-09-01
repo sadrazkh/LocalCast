@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "vite-plugin-pwa/client", "vitest/globals"]
+  },
+  "//": "Same settings as the build, but with the test files back in — so a broken test is still a type error, just not one that fails a production build.",
+  "include": ["src/**/*", "vite.config.ts", "vitest.config.ts"],
+  "exclude": []
+}

@@ -29,3 +29,7 @@ Thumbs.db
 
 # Test fixtures that are generated, not stored (multi-GB)
 **/__fixtures__/generated/
+
+# Build output of the workspaces
+apps/*/dist/
+packages/*/dist/

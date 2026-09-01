@@ -7,6 +7,17 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      /**
+       * injectManifest, not generateSW.
+       *
+       * The whole reason this app has a service worker is that `<video src>` cannot send an
+       * Authorization header, so `src/sw.ts` attaches it to media and WebDAV requests. A
+       * generated Workbox worker cannot express that, and — worse — it installs happily and
+       * silently, so the symptom is video that 401s while everything else looks fine.
+       */
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       includeAssets: ['icons/apple-touch-icon-180.png', 'icons/favicon-32.png'],
       manifest: {
         id: '/',
@@ -28,25 +39,18 @@ export default defineConfig({
           { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         // The app shell is precached so the library opens instantly and shows its offline
         // state rather than a browser error page when the server is unreachable.
-        globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
-        // A 20 GB film must never enter the cache, and a range request served from a cached
-        // 200 response would break seeking outright. Media, WebDAV and the API are all
-        // excluded from the service worker entirely; freshness there is client-core's job.
-        navigateFallbackDenylist: [/^\/api\//, /^\/dav\//],
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\/v1\/(folders|me)(\?.*)?$/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'lc-library-shell',
-              networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 7 },
-            },
-          },
-        ],
+        //
+        // A 20 GB film must never enter the cache: a Range request answered from a cached
+        // 200 is a full body where 206 was expected, and Safari's response to that is an
+        // unseekable timeline. Media and WebDAV are handled by src/sw/media.ts, which caches
+        // nothing at all; routing and freshness for the API are client-core's job.
+        globPatterns: ['**/*.{js,css,html,woff2,png,svg,webmanifest}'],
+        // 3 MB. The shell is ~660 KB today; this is a ceiling that trips if a build ever
+        // starts precaching something it should not.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
       devOptions: { enabled: false },
     }),

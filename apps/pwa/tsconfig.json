@@ -9,5 +9,7 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client", "vite-plugin-pwa/client"]
   },
-  "include": ["src/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "vite.config.ts", "vitest.config.ts"],
+  "//": "Tests are excluded from the production build's project so `tsc -b` does not fail a release on a test file. They are still type-checked: `npm run typecheck` uses tsconfig.test.json, which includes them.",
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"]
 }

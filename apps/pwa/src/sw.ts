@@ -47,10 +47,14 @@ interface WorkerScope {
 const scope = globalThis as unknown as WorkerScope;
 
 /**
- * `__WB_MANIFEST` is a build-time substitution, so it has to be *read* literally for the
- * plugin to find it — hence the direct property access rather than a helper.
+ * `__WB_MANIFEST` is a build-time substitution, and Workbox finds its injection point by
+ * searching the emitted bundle for the literal text `self.__WB_MANIFEST`. Reading it through
+ * the `scope` alias used everywhere else in this file emits `scope.__WB_MANIFEST`, which
+ * matches nothing and fails the build with a message about swSrc and swDest — so this one
+ * read goes through `self` on purpose.
  */
-const manifest: readonly PrecacheEntry[] = scope.__WB_MANIFEST ?? [];
+declare const self: WorkerScope;
+const manifest: readonly PrecacheEntry[] = self.__WB_MANIFEST ?? [];
 
 /**
  * Cache name derived from the manifest itself.
