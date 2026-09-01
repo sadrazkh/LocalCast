@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 import express, { type Express } from 'express';
 import { API_PREFIX, type ServerEvent } from '@localcast/contract';
 import { SqliteActivityLog } from './activity.js';
 import { edgeSecretGuard, peerContext } from './auth/middleware.js';
-import { PairingService } from './auth/pairing.js';
+import { PairingService, type LanEndpoint } from './auth/pairing.js';
 import { RateLimiter, type RateLimitOptions } from './auth/rateLimit.js';
 import { TokenService } from './auth/tokens.js';
 import { loadConfig, type ServerConfig, type ServerConfigOverrides } from './config.js';
@@ -21,6 +23,7 @@ import { Indexer } from './library/indexer.js';
 import { SqlPermissionService } from './library/permissions.js';
 import { FsFileResolver } from './library/resolver.js';
 import { createLogger } from './logger.js';
+import { ensureLanCertificate, type LanCertificate } from './net/selfSigned.js';
 
 export const OPERATOR_PREFIX = '/operator';
 
@@ -36,8 +39,21 @@ export interface LocalCastServer {
   ctx: ServerContext;
   config: ServerConfig;
   indexer: Indexer;
+  /**
+   * Binds both listeners and resolves with the **loopback HTTP** address, which is the one
+   * `netedge` proxies to and the one the operator API answers on.
+   */
   listen(port?: number): Promise<AddressInfo>;
   address(): AddressInfo | null;
+  /** The local-network HTTPS listener's address, or null when LAN sharing is off. */
+  lanAddress(): AddressInfo | null;
+  /**
+   * Where a device on the same Wi-Fi should connect, and the fingerprint of the certificate
+   * it will be shown. Null when LAN sharing is off, or when the machine has no address on it.
+   */
+  lanEndpoint(): LanEndpoint | null;
+  /** The certificate the LAN listener presents, for the panel and for logs. */
+  lanCertificate(): LanCertificate | null;
   dispose(): Promise<void>;
 }
 
@@ -84,6 +100,25 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   });
   const limiter = new RateLimiter(rateLimits ?? {});
   const indexer = new Indexer({ db, log, events });
+
+  /**
+   * The certificate for the local network, issued (or reloaded) before anything binds.
+   *
+   * Doing it here rather than lazily inside `listen` means a machine that cannot write to its
+   * own data directory fails at boot, with the reason in the log — not on the first phone
+   * that tries to connect.
+   */
+  const lanCert: LanCertificate | null = config.lan
+    ? ensureLanCertificate({
+        dir: path.join(config.dataDir, 'tls'),
+        extraHosts: config.lanHosts,
+        log,
+      })
+    : null;
+
+  // Filled in by `listen`, because the port is not known until the socket is bound.
+  let lanEndpoint: LanEndpoint | null = null;
+
   const pairing = new PairingService({
     db,
     tokens,
@@ -91,6 +126,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     events,
     ticketSecret: config.jwtSecret,
     publicHost: () => config.publicHost,
+    lanEndpoint: () => lanEndpoint,
     ownerUserId: () => ownerUserId(db),
   });
 
@@ -145,8 +181,33 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   app.use(notFoundHandler);
   app.use(errorHandler(log));
 
+  /**
+   * Two listeners, one Express app.
+   *
+   * Loopback stays plain HTTP because `netedge` is the only thing that talks to it: the
+   * sidecar terminates TLS on the tailnet and reverse-proxies here, so a second TLS hop
+   * between two processes on the same machine would encrypt nothing that is not already
+   * inside one kernel, and would ask the sidecar to validate a certificate no public root
+   * signed.
+   *
+   * The local network gets HTTPS on the self-signed certificate. Everything a phone or
+   * another desktop sends over the Wi-Fi — bearer tokens, file names, the file bytes
+   * themselves — is encrypted, which it was not when this listener spoke HTTP.
+   */
   const server = http.createServer(app);
+  const lanServer =
+    lanCert === null
+      ? null
+      : https.createServer({ key: lanCert.keyPem, cert: lanCert.certPem }, (req, res) => {
+          // Marks the request before Express ever sees it, so `edgeSecretGuard` can waive the
+          // edge secret for this listener alone. A property on the request object, not a
+          // header: a client has no way to set it.
+          (req as http.IncomingMessage & { viaLan?: boolean }).viaLan = true;
+          app(req, res);
+        });
+
   let listening = false;
+  let lanListening = false;
 
   if (config.indexOnStart) {
     // Deliberately not awaited: a 200k-file library must not delay the first request.
@@ -161,26 +222,56 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     config,
     indexer,
 
-    listen(port = config.port): Promise<AddressInfo> {
-      return new Promise((resolve, reject) => {
-        server.once('error', reject);
-        // 0.0.0.0 when the operator has chosen to share over the local network, loopback
-        // otherwise — where `netedge` is the only thing in front of us and is on this
-        // machine. The operator API is unaffected either way: it carries its own loopback
-        // check, so opening the LAN listener never exposes the surface that grants access.
-        server.listen(port, config.lan ? '0.0.0.0' : config.host, () => {
-          listening = true;
-          server.off('error', reject);
-          const addr = server.address() as AddressInfo;
-          log.info('server listening', { host: addr.address, port: addr.port });
-          resolve(addr);
+    async listen(port = config.port): Promise<AddressInfo> {
+      // Loopback only. Binding 0.0.0.0 here would put a plain-HTTP copy of the whole API on
+      // the local network next to the encrypted one, which is precisely what this listener
+      // stopped doing.
+      const addr = await bind(server, port, config.host);
+      listening = true;
+      log.info('server listening', { host: addr.address, port: addr.port });
+
+      if (lanServer !== null && lanCert !== null) {
+        const lanAddr = await bind(lanServer, config.lanPort, '0.0.0.0');
+        lanListening = true;
+        lanEndpoint =
+          lanCert.publishHost === null
+            ? null
+            : {
+                url: `https://${lanCert.publishHost}:${lanAddr.port}`,
+                fingerprint256: lanCert.fingerprint256,
+              };
+        log.info('local network listening (https)', {
+          host: lanAddr.address,
+          port: lanAddr.port,
+          // Logged so the value published in the QR code can be checked against the one a
+          // device reports seeing, without anybody having to run openssl.
+          fingerprint: lanCert.fingerprint256,
+          ...(lanEndpoint === null ? {} : { url: lanEndpoint.url }),
         });
-      });
+        if (lanEndpoint === null) {
+          log.warn('local network sharing is on but this machine has no address on one');
+        }
+      }
+
+      return addr;
     },
 
     address(): AddressInfo | null {
       const addr = server.address();
       return addr && typeof addr === 'object' ? addr : null;
+    },
+
+    lanAddress(): AddressInfo | null {
+      const addr = lanServer?.address();
+      return addr && typeof addr === 'object' ? addr : null;
+    },
+
+    lanEndpoint(): LanEndpoint | null {
+      return lanEndpoint;
+    },
+
+    lanCertificate(): LanCertificate | null {
+      return lanCert;
     },
 
     async dispose(): Promise<void> {
@@ -192,18 +283,36 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
           log.warn('module dispose failed', { module: mod.name, error: String(err) });
         }
       }
-      if (listening) {
-        await new Promise<void>((resolve) => {
-          server.close(() => resolve());
-          // An SSE stream or a paused range read would otherwise hold `close` open until the
-          // client noticed; every one of them has already been told to end.
-          server.closeAllConnections?.();
-        });
-      }
+      // An SSE stream or a paused range read would otherwise hold `close` open until the
+      // client noticed; every one of them has already been told to end.
+      if (listening) await shutdown(server);
+      if (lanListening && lanServer !== null) await shutdown(lanServer);
       events.dispose();
       db.close();
     },
   };
+}
+
+/** `listen`, promised, with the `error` listener removed once it can no longer fire. */
+function bind(
+  server: http.Server | https.Server,
+  port: number,
+  host: string,
+): Promise<AddressInfo> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve(server.address() as AddressInfo);
+    });
+  });
+}
+
+function shutdown(server: http.Server | https.Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+    server.closeAllConnections?.();
+  });
 }
 
 /**
@@ -319,3 +428,11 @@ export { InMemoryEventBus } from './events/bus.js';
 export { SqliteActivityLog } from './activity.js';
 export { loadConfig } from './config.js';
 export type { ServerConfig } from './config.js';
+export type { LanEndpoint } from './auth/pairing.js';
+export {
+  defaultSanHosts,
+  ensureLanCertificate,
+  generateLanCertificate,
+  lanIpv4Addresses,
+} from './net/selfSigned.js';
+export type { LanCertificate } from './net/selfSigned.js';

@@ -47,11 +47,16 @@ TUN driver.** It embeds `tailscale.com/tsnet`, which is userspace WireGuard.
 iPhone ──WireGuard/DERP──▶ netedge.exe (:443 on the tailnet, TLS terminated)
                                 │  reverse proxy, injects X-LC-Edge-Secret + X-LC-Peer
                                 ▼
-                           Node server on 127.0.0.1:<ephemeral>
+                           Node server on 127.0.0.1:<ephemeral>   (HTTP)
+                                ▲
+phone on the same Wi-Fi ────────┘  second listener, 0.0.0.0:<ephemeral> (HTTPS) — see §2.5
 ```
 
-The Node server binds loopback only and rejects any request without the shared secret
-header, so no other process on the machine can reach it by pointing a browser at localhost.
+The loopback listener rejects any request without the shared secret header, so no other
+process on the machine can reach it by pointing a browser at localhost. It speaks plain HTTP
+on purpose: `netedge` terminates its own TLS and proxies to it from the same machine, so a
+second TLS hop over loopback would encrypt nothing that is not already inside one kernel and
+would ask the sidecar to validate a certificate no public root signed.
 
 ### 2.2 Three network modes
 
@@ -99,6 +104,45 @@ Changing mode writes `network_config`, restarts the tsnet node inside the runnin
 process, and leaves SQLite untouched. Devices, permissions and pairings survive. The only
 user-visible consequence is that the server's hostname changes, which the clients handle by
 re-resolving through the stored pairing record.
+
+### 2.5 The local network is encrypted too — self-signed, pinned, never a CA
+
+Local sharing is what makes signing in optional, and it used to be the one place in the
+product where bytes crossed a network in the clear. On a shared Wi-Fi that hands every file
+name, every media byte and every bearer token to anyone else on the network. So the LAN
+listener is HTTPS, on a P-256 certificate **the app generates for itself** at first run.
+
+Three decisions, and the reasoning that fixes them:
+
+- **No certificate authority is installed on any device.** A CA on a phone means a
+  configuration profile on iOS and a trust store the user cannot easily undo, and it is a far
+  larger thing to ask than one warning. The cost is that warning: the first time a device
+  connects, the browser asks whether to trust this computer. The pairing screen says so in
+  one plain sentence *before* it happens, because a person who meets that screen unprepared
+  reads it as "something is wrong" and stops.
+- **The certificate is persisted and reused.** It lives in `<dataDir>/tls`, is valid two
+  years, and is regenerated only when it is near expiry or when the machine's LAN address is
+  no longer in its SAN — a DHCP lease moving is enough to do the latter. A certificate that
+  changed on every launch would mean a warning on every launch, and a warning people see
+  daily is a warning they stop reading.
+- **The SHA-256 fingerprint is published**, in the QR payload's `fp` field alongside the
+  origin in `url`. A phone's browser cannot check it; the Windows client can and does, pinning
+  that exact certificate. `rejectUnauthorized: false` is never acceptable in shipping code —
+  it turns "encrypted" into "encrypted to whoever answered", which on a café Wi-Fi is not a
+  hypothetical. A **missing** `fp` means "ordinary publicly-trusted certificate, verify
+  normally", never "skip verification".
+
+This is a net gain beyond the encryption. A plain-HTTP origin is not a secure context, so LAN
+mode had no service worker (no offline library) and no camera (no QR scanning). An `https://`
+origin has both. The residual unknown is whether a given browser grants those to an origin
+whose certificate the user clicked through — Chrome is documented to refuse service-worker
+registration on an origin with an outstanding certificate error — which is recorded in the
+README's "not proven" list and in the acceptance checklist rather than assumed away.
+
+The edge secret's waiver is scoped to the LAN listener, not to the process: with local sharing
+on, loopback still demands the header. That preserves the §2.1 property — no other process on
+this machine can reach the API by guessing the port — which a process-wide waiver would have
+quietly dropped.
 
 ---
 
@@ -191,6 +235,13 @@ exposed to the network at all.
 QR payload: `{v:1, host, code, secret}` where `secret` is 32 random bytes, base64url. The
 long secret makes the QR unguessable; the 4-character code is the manual fallback and is
 locked after 5 failures.
+
+Two optional fields carry the local network (§2.5): `url`, the absolute origin to connect to
+(`https://192.168.1.50:8443` — a bare IP on an ephemeral port, which `host` is validated as a
+MagicDNS name and cannot express), and `fp`, the SHA-256 fingerprint of the certificate that
+origin presents. A client that understands `url` prefers it over `host`. `host` keeps its
+original meaning in every payload, so an older client reading a newer QR is unchanged rather
+than broken.
 
 **Rate limiting cannot be per-IP.** Behind Funnel every request arrives from Tailscale's
 relays, so a per-IP bucket limits nothing. Three layers instead: a global bucket on

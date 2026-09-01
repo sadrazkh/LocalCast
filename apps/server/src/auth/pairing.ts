@@ -81,7 +81,23 @@ export interface PairingServiceDeps {
    * put a stale or placeholder host into the QR code.
    */
   publicHost: () => string;
+  /**
+   * The local-network HTTPS endpoint, or null when sharing over the LAN is off.
+   *
+   * A getter for the same reason `publicHost` is one: the listener has not bound its port at
+   * the moment this service is constructed, and the certificate can be reissued underneath it
+   * when the machine's address changes.
+   */
+  lanEndpoint?: () => LanEndpoint | null;
   ownerUserId: () => string;
+}
+
+/** Where a device on the same Wi-Fi connects, and the certificate it will be shown. */
+export interface LanEndpoint {
+  /** `https://192.168.1.50:8443` — scheme and port included, because both are load-bearing. */
+  url: string;
+  /** SHA-256 of the self-signed certificate, uppercase colon-separated hex. */
+  fingerprint256: string;
 }
 
 export class PairingService {
@@ -136,10 +152,22 @@ export class PairingService {
 
     this.deps.activity.record('pairing.minted', null, { code, ttlSeconds: opts.ttlSeconds });
 
+    // On the LAN the QR carries the origin outright — scheme, address and port — plus the
+    // fingerprint of the certificate that origin will present. The `host` field stays what it
+    // has always been (a MagicDNS name, validated as one by every client), so an old client
+    // reading a new payload is unchanged rather than broken.
+    const lan = this.deps.lanEndpoint?.() ?? null;
+
     return {
       id,
       code,
-      qr: { v: 1, host: this.deps.publicHost(), code, secret },
+      qr: {
+        v: 1,
+        host: this.deps.publicHost(),
+        code,
+        secret,
+        ...(lan === null ? {} : { url: lan.url, fp: lan.fingerprint256 }),
+      },
       expiresAt,
     };
   }

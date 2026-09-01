@@ -3,6 +3,7 @@ import type { Platform, QrPayload } from '@localcast/contract';
 import type { ApiClient } from './api.js';
 import type { BackoffOptions, Sleep } from './backoff.js';
 import { backoffDelay, PAIRING_POLL_BACKOFF, systemSleep } from './backoff.js';
+import { endpointFromQr } from './certificates.js';
 import { CancelledError, LocalCastError, tryParseJson } from './errors.js';
 import type { Clock, StoredSession } from './ports.js';
 
@@ -60,7 +61,33 @@ export function parseQrPayload(raw: string): QrPayload {
       fields: ['host'],
     });
   }
+  if (result.data.url !== undefined && !isUsableOrigin(result.data.url)) {
+    throw invalid('this pairing code points at an address LocalCast cannot use', {
+      fields: ['url'],
+    });
+  }
   return result.data;
+}
+
+/**
+ * A local-network origin: `https://` and nothing else.
+ *
+ * `http://` is refused outright rather than downgraded to a warning. The whole point of this
+ * field is that the local network is encrypted now, and a payload offering a plain-HTTP origin
+ * is either an old server or someone trying to talk a client out of TLS.
+ */
+export function isUsableOrigin(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+  if (parsed.username !== '' || parsed.password !== '') return false;
+  // A pairing origin names a server, not a page on one.
+  if (parsed.search !== '' || parsed.hash !== '') return false;
+  return parsed.pathname === '/' || parsed.pathname === '';
 }
 
 export type PairingPhase = 'claiming' | 'waiting-for-approval';
@@ -128,12 +155,20 @@ export async function runPairing(options: PairingOptions): Promise<StoredSession
     const status = await api.pairingStatus(claim.deviceId, claim.claimTicket, { signal });
 
     if (status.status === 'approved') {
+      // Carried into the session so a reconnect uses the same origin and pins the same
+      // certificate. Recomputing either later would mean guessing, and the wrong guess is
+      // either a connection that fails or one that trusts something it should not.
+      const endpoint = endpointFromQr(payload);
       return {
         deviceId: status.device.id,
         accessToken: status.accessToken,
         refreshToken: status.refreshToken,
         expiresAt: status.expiresAt,
         host: payload.host,
+        ...(payload.url === undefined ? {} : { baseUrl: endpoint.baseUrl }),
+        ...(endpoint.pinnedFingerprint === null
+          ? {}
+          : { fingerprint: endpoint.pinnedFingerprint }),
         davPassword: status.davPassword,
       };
     }

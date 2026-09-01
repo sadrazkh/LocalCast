@@ -350,6 +350,46 @@ permission hides exactly the bug this item looks for.
   the 4-character code; if that pairs, the transport is fine and the scanner is the problem.
 - *Reopening asks to pair again:* the token is not surviving a cold start.
 
+### ☐ E2 — What a browser grants an origin whose certificate you accepted
+
+**Why nothing here can prove this.** On the local network the certificate is self-signed by
+design (§2.5 of the design spec): the first connection shows a warning and the user accepts
+it. The origin is then `https://`, which is a secure context — but browsers differ on what
+they grant an origin that carries an *outstanding certificate error*. Chrome is documented to
+refuse service-worker registration in that state; Safari on iOS has not been checked. This is
+the difference between LAN mode having the offline library and not having it, and only a
+phone can settle it.
+
+Do this on a phone that has never accepted this computer's certificate.
+
+**Do:**
+
+1. Open the LAN address the pairing screen shows (`https://<ip>:<port>`).
+2. Read the warning. Accept it once, following the panel's sentence.
+3. Pair, then check the camera path (E1) works on this origin.
+4. Put the phone in airplane mode and reopen the app from the home screen.
+5. Reconnect, restart the Windows app, and open the address again.
+
+**Pass looks like:**
+
+- The warning appears **once per device**, not once per launch. If it comes back after a
+  restart of the Windows app, the certificate is being regenerated when it should be reused.
+- The camera opens for QR scanning — this is what the old plain-HTTP LAN mode could not do.
+- In airplane mode the library still lists from the offline cache, i.e. the service worker
+  registered.
+
+**A failure means:**
+
+- *The warning returns on every launch:* the certificate is not being persisted or its SAN no
+  longer matches the machine's address. Check `<dataDir>/tls` and the server log line
+  `local-network certificate issued` — it should appear once, not on every start.
+- *The service worker refuses to register:* the browser is holding the line described above.
+  Record which browser and version; the honest fix is to say so in the README rather than to
+  claim the offline library works everywhere.
+- *A second, different warning about the name:* the address being published is not in the
+  certificate's SAN. The server is supposed to make that impossible by deriving both from one
+  place; if it happens, that is a real bug.
+
 ---
 
 ## F. Revocation
@@ -438,6 +478,7 @@ feels broken even when it is working as designed.
 | C2 — Headscale on a real VPS | ☐ | | |
 | D1 — Files app and Infuse over WebDAV | ☐ | | |
 | E1 — Home-screen install and camera | ☐ | | |
+| E2 — Accepted certificate: camera and offline | ☐ | | |
 | F1 — Revocation mid-stream | ☐ | | |
 | G1 — Unplugged drive | ☐ | | |
 | G2 — Server unreachable | ☐ | | |

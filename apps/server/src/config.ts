@@ -54,11 +54,26 @@ export interface ServerConfig {
    * somewhere else; on the same Wi-Fi nothing needs a coordination server, an account or a
    * certificate authority, and the original design was explicit that it should not.
    *
-   * The cost is real and is stated where the user turns it on: a plain-HTTP origin is not a
-   * secure context, so the phone gets no service worker (no offline library) and no camera
-   * (pair by typing the four-character code instead). Everything else works.
+   * That listener is **HTTPS**, on a certificate the app generates for itself. No certificate
+   * authority is installed on any device; the cost is one browser warning the first time a
+   * phone connects. What it buys, beyond the traffic no longer being readable by everyone
+   * else on the Wi-Fi, is a secure context — so the phone gets its service worker (offline
+   * library) and its camera (QR scanning), neither of which a plain-HTTP origin can have.
    */
   lan: boolean;
+  /**
+   * Port for the local-network HTTPS listener. Separate from `port` because one socket cannot
+   * speak both HTTP and HTTPS, and loopback has to stay plain HTTP: `netedge` terminates its
+   * own TLS and proxies to us, so a second TLS hop over loopback would buy nothing and would
+   * ask the sidecar to trust a certificate it has no reason to.
+   */
+  lanPort: number;
+  /**
+   * Extra names to put in the certificate's SAN, on top of loopback, this machine's hostname
+   * and its detected LAN addresses. Empty in production; a fixed value makes a test's
+   * certificate predictable.
+   */
+  lanHosts: string[];
   logLevel: LogLevel;
 }
 
@@ -102,6 +117,8 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     webRoot: overrides.webRoot ?? '',
     nativeBinding: overrides.nativeBinding ?? '',
     lan: overrides.lan ?? false,
+    lanPort: overrides.lanPort ?? 0,
+    lanHosts: overrides.lanHosts ?? [],
     logLevel: overrides.logLevel ?? 'info',
   };
 }

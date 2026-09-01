@@ -6,6 +6,10 @@ import type { AddressInfo } from 'node:net';
  * It binds loopback on an ephemeral port and rejects anything that does not carry the shared
  * secret, so the only way in is through `netedge`. Nothing else on the machine — no other
  * app, no browser pointed at 127.0.0.1 — can reach the user's files by guessing the port.
+ *
+ * When local sharing is on it opens a second listener, on the network and **over HTTPS**,
+ * using a certificate the server generates for itself. Loopback stays plain HTTP because
+ * `netedge` proxies to it from the same machine; the network listener never does.
  */
 
 export interface ServerHostOptions {
@@ -28,7 +32,18 @@ export interface ServerHostOptions {
 }
 
 export interface ServerHandle {
+  /** The loopback HTTP port. This is what `netedge` proxies to and the operator API uses. */
   port: number;
+  /**
+   * `https://192.168.1.50:8443` — where a device on the same Wi-Fi connects. Null when local
+   * sharing is off, or when this machine has no address on a local network.
+   */
+  lanUrl: string | null;
+  /**
+   * SHA-256 of the certificate that origin presents, uppercase colon-separated hex. Shown in
+   * the panel and carried in the QR code so a native client can pin it.
+   */
+  lanFingerprint: string | null;
   /**
    * Publishes the MagicDNS name once `netedge` knows it.
    *
@@ -56,6 +71,7 @@ interface ServerModuleShape {
   createServer(options: Record<string, unknown>): Promise<{
     config: { publicHost: string };
     listen(port?: number): Promise<AddressInfo>;
+    lanEndpoint(): { url: string; fingerprint256: string } | null;
     dispose(): Promise<void>;
   }>;
 }
@@ -90,9 +106,14 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
   });
 
   const address = await instance.listen();
+  // Read after `listen`, never before: the LAN listener's port is assigned by the OS, and the
+  // URL is not knowable until it is bound.
+  const lan = instance.lanEndpoint();
 
   return {
     port: address.port,
+    lanUrl: lan?.url ?? null,
+    lanFingerprint: lan?.fingerprint256 ?? null,
     setPublicHost(host: string) {
       instance.config.publicHost = host;
     },

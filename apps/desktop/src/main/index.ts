@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { AppConfigStore, configPathFor } from './appConfig.js';
@@ -102,26 +101,6 @@ function portableRoot(): string | null {
   return null;
 }
 
-/**
- * This machine's address on the local network, or null when it has none.
- *
- * Skips loopback and link-local, and prefers a private range — a VPN or a container bridge
- * can otherwise supply an address no phone in the house can reach.
- */
-function lanAddress(): string | null {
-  const candidates: string[] = [];
-  for (const addresses of Object.values(networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.family !== 'IPv4' || address.internal) continue;
-      if (address.address.startsWith('169.254.')) continue;
-      candidates.push(address.address);
-    }
-  }
-  const isPrivate = (ip: string) =>
-    ip.startsWith('192.168.') || ip.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
-  return candidates.find(isPrivate) ?? candidates[0] ?? null;
-}
-
 function paths() {
   const portable = portableRoot();
   const dataDir = portable ?? join(app.getPath('appData'), 'LocalCast');
@@ -205,6 +184,12 @@ async function bootstrap(): Promise<void> {
     appConfig,
     version: app.getVersion(),
     serverPort: () => serverHandle?.port ?? 0,
+    // A getter, like the rest: the handlers are registered before the server exists, and the
+    // LAN port is not known until its socket is bound.
+    lanEndpoint: () => ({
+      url: serverHandle?.lanUrl ?? null,
+      fingerprint: serverHandle?.lanFingerprint ?? null,
+    }),
     restartEdge: async (config: NetworkConfig): Promise<EdgeStatus> => {
       if (!edge) throw new Error('network edge is not running');
       return edge.applyConfig(config);
@@ -337,12 +322,24 @@ async function bootstrap(): Promise<void> {
 
   broadcastEdgeStatus(edge);
 
-  // The address a phone on the same Wi-Fi types or scans. Published before netedge has said
-  // anything, because on a local network there is nothing to wait for: no sign-in, no
-  // coordination server, no certificate.
-  if (appConfig.get().shareOnLan) {
-    const lan = lanAddress();
-    if (lan) serverHandle.setPublicHost(`${lan}:${serverHandle.port}`);
+  /**
+   * The address a phone on the same Wi-Fi types or scans, e.g. `https://192.168.1.50:8443`.
+   *
+   * The server works this out for itself rather than being told: the address has to match the
+   * certificate's SAN exactly, and two independent pieces of code detecting "the LAN address"
+   * is precisely how they come to disagree — at which point the phone gets a name-mismatch
+   * error on top of the untrusted-issuer one.
+   *
+   * It deliberately does **not** go through `setPublicHost`. That value becomes the QR code's
+   * `host` field, which every client validates as a MagicDNS name; an origin with a scheme and
+   * a port fails that check and would break the very QR scanning this release enables. The
+   * origin and its fingerprint travel in the QR payload's own `url` and `fp` fields instead,
+   * which the server fills in at mint time.
+   */
+  if (serverHandle.lanUrl) {
+    console.log(`[server] sharing on the local network at ${serverHandle.lanUrl}`);
+  } else if (appConfig.get().shareOnLan) {
+    console.warn('[server] local sharing is on, but this machine has no local network address');
   }
 
   // Only when the user has asked to be reachable from elsewhere. Starting it unasked is what

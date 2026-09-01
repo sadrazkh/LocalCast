@@ -14,6 +14,11 @@ declare module 'express-serve-static-core' {
   interface Request {
     device?: DeviceIdentity;
     peer?: string;
+    /**
+     * Set by the HTTPS listener that faces the local network, before Express sees the request.
+     * A client cannot forge it: it is a property on the request object, not a header.
+     */
+    viaLan?: boolean;
   }
 }
 
@@ -35,11 +40,17 @@ export function edgeSecretGuard(secret: string, options: { lanAllowed?: boolean 
      * way in. Once the operator has deliberately shared over the LAN there is no edge to
      * inject it, and a phone on the same Wi-Fi cannot be asked to know it.
      *
-     * Nothing is given away by allowing this through. Every route below still demands a
-     * device token, and the operator API — the surface that grants access — is mounted behind
-     * its own loopback check, which this flag does not touch.
+     * The bypass is limited to requests that arrived on the LAN listener, not to every request
+     * while LAN sharing happens to be on. That is the whole reason the two listeners are
+     * separate objects: loopback keeps demanding the secret, so the original property — no
+     * other process on this machine can reach the API by guessing the port — survives
+     * switching local sharing on.
+     *
+     * Nothing else is given away. Every route below still demands a device token, and the
+     * operator API — the surface that grants access — is mounted behind its own loopback
+     * check, which this flag does not touch.
      */
-    if (options.lanAllowed) {
+    if (options.lanAllowed && req.viaLan === true) {
       next();
       return;
     }

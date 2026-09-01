@@ -13,9 +13,17 @@ certificate on its own hostname, so nothing has to be exposed to the internet. A
 can point the same install at their own self-hosted Headscale instead of Tailscale, and
 switch back, without reinstalling.
 
-One honest cost of the no-account path: a plain-HTTP origin is not a secure context, so on
-the phone there is no camera (pair by typing the code rather than scanning) and no offline
-library. Turning on remote access restores both.
+**Every connection is encrypted, including on your own Wi-Fi.** On the local network the app
+serves HTTPS on a certificate it generates for itself, so nothing else on the network can read
+your files, your file names or the token your phone holds. Nothing is installed on the phone
+to make that work — no certificate authority, no configuration profile.
+
+The one honest cost is a single browser warning: the first time a device connects it asks
+whether to trust this computer, because the connection is protected by the computer itself
+rather than by an outside authority. Say yes once, per device. In exchange the origin is a
+secure context, which is what the camera (scan the QR instead of typing the code) and the
+service worker (the offline library) both require — neither of which the old plain-HTTP LAN
+mode could offer at all.
 
 ## Layout
 
@@ -105,6 +113,14 @@ Still **not** proven, and neither is a detail:
   coordination server and a personal Headscale are all in
   [`docs/acceptance-checklist.md`](docs/acceptance-checklist.md), because only hardware can
   settle them.
+- **The camera and the offline library have not been observed working behind an accepted
+  certificate warning.** The LAN listener genuinely speaks TLS — that is proven here, by a real
+  handshake — and an `https://` origin is a secure context, which is what both features
+  require. What is not proven is how each browser treats a *self-signed* origin the user has
+  clicked through: Chrome is documented to refuse service-worker registration on an origin with
+  an outstanding certificate error, and Safari's behaviour on iOS has not been checked. If a
+  browser holds that line, LAN mode gets the camera and encrypted traffic but not the offline
+  library. Settling this needs a phone, and it is in the checklist as such.
 
 Before packaging, drop `SumatraPDF.exe` into `vendor/bin` — see
 [`vendor/README.md`](vendor/README.md). Without it everything works except printing, which

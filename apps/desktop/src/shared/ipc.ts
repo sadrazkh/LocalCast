@@ -70,6 +70,20 @@ export interface AppInfo {
   /** Where the PWA can be reached, once the edge knows. Shown on the pairing screen. */
   host: string | null;
   serverPort: number;
+  /**
+   * `https://192.168.1.50:8443` — the address a device on the same Wi-Fi opens. Null when
+   * local sharing is off, or when this machine has no address on a local network.
+   *
+   * A full origin rather than a host: the scheme is the point (it is HTTPS now, on a
+   * certificate this machine issued itself) and the port is not 443.
+   */
+  lanUrl: string | null;
+  /**
+   * Fingerprint of that certificate. Not shown by default — it is not something anyone should
+   * have to read — but it is what the Windows client pins, and having it on screen is the only
+   * way a suspicious person can check the two match.
+   */
+  lanFingerprint: string | null;
   locale: 'fa' | 'en';
   /** False until the three-step wizard has been completed once. */
   setupComplete: boolean;

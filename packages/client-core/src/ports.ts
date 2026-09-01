@@ -65,6 +65,21 @@ export interface StoredSession {
   expiresAt: number;
   /** MagicDNS host this device paired against. Survives a network-mode switch by re-resolving. */
   host: string;
+  /**
+   * The absolute origin to use instead of deriving one from `host`.
+   *
+   * Set when the device paired over the local network, where the server is at a bare IP on an
+   * ephemeral port — `https://192.168.1.50:8443` — which `host` cannot express.
+   */
+  baseUrl?: string;
+  /**
+   * The certificate to pin for `baseUrl`, when that server issued its own.
+   *
+   * Stored alongside the tokens deliberately: the pin has to survive a restart, and a client
+   * that forgot it would have to choose between refusing to connect and turning verification
+   * off. See `certificates.ts` for why the second option is not a choice.
+   */
+  fingerprint?: string;
   /** Basic-auth password for the read-only WebDAV mount; shown once at pairing, never again. */
   davPassword: string;
 }

@@ -40,7 +40,7 @@ interface Minted {
 export function PairingScreen() {
   const t = useT();
   const c = useCopy();
-  const { status } = useShell();
+  const { status, info } = useShell();
   const { folders, loading } = useLibrary();
 
   const [defaults, setDefaults] = useState<Record<string, AccessMode>>({});
@@ -136,6 +136,18 @@ export function PairingScreen() {
               <AddressField host={status?.host ?? null} />
               {status?.funnelUrl ? (
                 <AddressField host={status.funnelUrl} label={t('network.publicAddress')} />
+              ) : null}
+              {info?.lanUrl ? (
+                <>
+                  <AddressField host={info.lanUrl} label={c('pairing.lanAddress')} />
+                  {/*
+                    The warning is named before it happens, in one sentence, with no jargon.
+                    The connection is protected by this computer rather than by an outside
+                    company, so the phone asks once whether to trust it — and a person who
+                    meets that screen unprepared reads it as "something is wrong" and stops.
+                  */}
+                  <p className={styles.trustNote}>{c('pairing.trustOnce')}</p>
+                </>
               ) : null}
             </div>
 

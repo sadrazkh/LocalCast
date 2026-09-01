@@ -19,6 +19,7 @@ export * from './api.js';
 export * from './events.js';
 export * from './connection.js';
 export * from './pairing.js';
+export * from './certificates.js';
 export * from './codes.js';
 export * from './offline.js';
 

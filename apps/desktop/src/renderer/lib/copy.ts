@@ -101,6 +101,13 @@ export const copy = {
     'pairing.noFolders': 'هنوز پوشه‌ای برای اشتراک نیست',
     'pairing.minting': 'در حال ساختن کد…',
     'pairing.failed': 'ساختن کد انجام نشد',
+    'pairing.lanAddress': 'نشانی روی همین وای‌فای',
+    // Said plainly, and said *before* it happens. The phone shows a warning the first time it
+    // connects, because the connection is protected by this computer itself rather than by an
+    // outside company. Hiding that would mean the user meets a scary screen with no idea why;
+    // naming it first turns it into a step they were expecting.
+    'pairing.trustOnce':
+      'بار اول، گوشی می‌پرسد که آیا به این رایانه اعتماد می‌کنید. «بله» را بزنید؛ همین رایانهٔ خودتان است و فقط یک بار پرسیده می‌شود.',
 
     // ── settings (screen 14) ───────────────────────────────────────────────────────
     'settings.level.info': 'اطلاع',
@@ -245,6 +252,9 @@ export const copy = {
     'pairing.noFolders': 'No folder is shared yet',
     'pairing.minting': 'Making a code…',
     'pairing.failed': 'The code could not be made',
+    'pairing.lanAddress': 'Address on this Wi-Fi',
+    'pairing.trustOnce':
+      'The first time it connects, your phone will ask whether to trust this computer. Say yes — it means this computer, and it only asks once.',
 
     'settings.level.info': 'Note',
     'settings.level.warn': 'Warning',

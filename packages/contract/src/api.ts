@@ -31,6 +31,13 @@ export const paginationSchema = z.object({
 
 // ─── pairing ──────────────────────────────────────────────────────────────────
 
+/**
+ * A SHA-256 certificate fingerprint as OpenSSL and Node print it: 32 uppercase hex pairs
+ * joined by colons. Constrained here rather than left as a free string so a client that pins
+ * it never has to guess which of the four common spellings it received.
+ */
+export const fingerprintSha256Schema = z.string().regex(/^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+
 /** Payload encoded into the QR code shown on screen 03. */
 export const qrPayloadSchema = z.object({
   v: z.literal(1),
@@ -40,6 +47,26 @@ export const qrPayloadSchema = z.object({
   code: z.string().length(4),
   /** 32 random bytes, base64url. This is what makes the QR unguessable. */
   secret: z.string().min(32),
+  /**
+   * The absolute origin to connect to, when it is not simply `https://<host>`.
+   *
+   * Present in local-network mode, where the server listens on an ephemeral HTTPS port at a
+   * bare IP: `https://192.168.1.50:8443`. A bare IP with a port cannot be spelled in `host`,
+   * which is a MagicDNS name by contract and is validated as one. A client that understands
+   * this field must prefer it over `host`.
+   */
+  url: z.string().url().optional(),
+  /**
+   * Fingerprint of the certificate `url` presents, when that certificate is the self-signed
+   * one the server generated for the local network.
+   *
+   * A phone's browser cannot check this — it shows its warning and the person accepts it. A
+   * native client can and must: pinning this exact certificate is the difference between
+   * "encrypted to this computer" and "encrypted to whoever answered". Its presence is what
+   * tells a client the certificate will not chain to a public root, so the absence of this
+   * field must never be read as permission to skip verification.
+   */
+  fp: fingerprintSha256Schema.optional(),
 });
 export type QrPayload = z.infer<typeof qrPayloadSchema>;
 

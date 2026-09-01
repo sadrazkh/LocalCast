@@ -27,6 +27,8 @@ export interface IpcDeps {
   appConfig: AppConfigStore;
   version: string;
   serverPort: () => number;
+  /** The local-network origin and its certificate fingerprint; both null until the server is up. */
+  lanEndpoint: () => { url: string | null; fingerprint: string | null };
   restartEdge: (config: NetworkConfig) => Promise<EdgeStatus>;
 }
 
@@ -211,10 +213,13 @@ export function registerIpc(deps: IpcDeps): void {
   // ── app ────────────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.appInfo, (): AppInfo => {
     const cfg = appConfig.get();
+    const lan = deps.lanEndpoint();
     return {
       version: deps.version,
       host: edge()?.status.host ?? null,
       serverPort: deps.serverPort(),
+      lanUrl: lan.url,
+      lanFingerprint: lan.fingerprint,
       locale: cfg.locale,
       setupComplete: cfg.setupComplete,
     };

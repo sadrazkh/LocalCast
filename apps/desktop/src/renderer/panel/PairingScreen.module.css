@@ -45,6 +45,21 @@
   align-items: flex-start;
 }
 
+/*
+ * The one-time trust prompt, explained before the user meets it.
+ *
+ * Muted and small, sitting under the address it belongs to: this is a note, not an alarm.
+ * Styling it as a warning would contradict the sentence, which exists precisely to say that
+ * what the phone is about to show is expected.
+ */
+.trustNote {
+  margin: 0;
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-xs);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
 .defaults {
   display: flex;
   flex-direction: column;

@@ -13,6 +13,7 @@
  *   C2  the Headscale deployment itself
  *   D1  the iOS Files app and Infuse against the WebDAV mount
  *   E1  home-screen install and the camera permission
+ *   E2  what a browser grants an origin whose certificate the user accepted
  *
  *   node scripts/acceptance.mjs
  */
@@ -127,10 +128,22 @@ async function main() {
     logLevel: 'silent',
     publicHost: lan,
   });
-  const addr = await server.listen(0);
-  const scheme = await detectScheme(lan, addr.port);
-  const base = `${scheme}://${lan}:${addr.port}`;
-  console.log(`Server on ${base}${scheme === 'http' ? '  (NOT ENCRYPTED)' : ''}\n`);
+  await server.listen(0);
+
+  // `listen` resolves with the *loopback* address, which is where `netedge` proxies to and
+  // where the operator API answers. The network listener is a separate socket on its own
+  // port, and the server publishes its origin — the same string the QR code carries — so this
+  // harness reaches the machine by exactly the route a phone would.
+  const endpoint = server.lanEndpoint();
+  if (!endpoint) {
+    console.error('The server reported no local-network endpoint; nothing here can be checked.');
+    process.exit(1);
+  }
+  const { hostname, port } = new URL(endpoint.url);
+  const scheme = await detectScheme(hostname, port);
+  const base = `${scheme}://${hostname}:${port}`;
+  console.log(`Server on ${base}${scheme === 'http' ? '  (NOT ENCRYPTED)' : ''}`);
+  console.log(`Certificate ${server.lanCertificate()?.fingerprint256 ?? '(none)'}\n`);
 
   try {
     await runChecks({ server, base, share, big, work });
@@ -147,7 +160,8 @@ async function main() {
       '  C1  switch to a personal Headscale and back\n' +
       '  C2  the Headscale deployment on a VPS\n' +
       '  D1  the iOS Files app and Infuse against WebDAV\n' +
-      '  E1  home-screen install and camera permission',
+      '  E1  home-screen install and camera permission\n' +
+      '  E2  camera and offline library on an accepted self-signed certificate',
   );
   process.exit(failed.length ? 1 : 0);
 }
