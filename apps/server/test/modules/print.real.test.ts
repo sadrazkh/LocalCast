@@ -446,13 +446,28 @@ describe.skipIf(reality.skip !== null)('the real PrintTo registration', () => {
     }
   }, SLOW);
 
-  it('finds no PrintTo handler for .bmp, which is why a bitmap is refused without the helper', async () => {
-    // Measured here, not assumed: `.bmp` resolves to `Paint.Picture`, and Paint never
-    // registered `printto`. `.png` is the control — Windows does register it — so a probe
-    // that simply always returned false could not pass both halves.
-    const bmp = await probePrintTo(defaultExecFile, '.bmp');
+  it('reads the PrintTo handler out of the real registry, and distinguishes types', async () => {
+    // What is asserted here is that the probe *reads the machine*, not what this particular
+    // machine says. Which extensions have a `printto` verb is a property of whatever software
+    // is installed: `.png` is registered by Windows itself, but `.bmp` belongs to
+    // `Paint.Picture` on a desktop and to something else again on a CI runner. An earlier
+    // version of this test hard-coded `bmp: false` — true here, false on the runner, and a
+    // red build that said nothing about the code.
+    //
+    // So: the probe must answer confidently for a type Windows itself owns, and must return a
+    // decided answer rather than an error for one it may not.
     const png = await probePrintTo(defaultExecFile, '.png');
-    expect({ bmp: bmp.registered, png: png.registered }).toEqual({ bmp: false, png: true });
+    expect(png.known).toBe(true);
+    expect(png.registered).toBe(true);
+
+    const bmp = await probePrintTo(defaultExecFile, '.bmp');
+    expect(bmp.known).toBe(true);
+    expect(typeof bmp.registered).toBe('boolean');
+
+    // And an extension nothing on any machine claims must come back unregistered — the half
+    // that stops a probe which simply always says yes from passing.
+    const nonsense = await probePrintTo(defaultExecFile, '.localcast-not-a-real-type');
+    expect(nonsense.registered).toBe(false);
   }, SLOW);
 });
 
