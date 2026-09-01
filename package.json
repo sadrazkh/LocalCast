@@ -23,7 +23,8 @@
     "netedge:build": "cd native/netedge && go build -o netedge.exe ./cmd/netedge",
     "netedge:test": "cd native/netedge && go test ./...",
     "//build": "Explicit order, not --workspaces: contract and client-core publish compiled dist, and npm runs workspaces alphabetically, so client-core would build against a contract that does not exist yet. ui-kit is absent because it publishes from source.",
-    "//start": "rebuild:native comes first and is a no-op when the binding already matches Electron's ABI. It is cheap insurance: without it the app dies at its first database call with NODE_MODULE_VERSION, which reads like a code bug and is not one. See docs/prerequisites.md."
+    "//start": "rebuild:native comes first and is a no-op when the binding already matches Electron's ABI. It is cheap insurance: without it the app dies at its first database call with NODE_MODULE_VERSION, which reads like a code bug and is not one. See docs/prerequisites.md.",
+    "acceptance": "node scripts/acceptance.mjs"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
