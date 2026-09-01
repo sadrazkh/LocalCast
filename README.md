@@ -1,12 +1,21 @@
 # LocalCast
 
-Share folders, stream video and print remotely from a Windows machine to your phone and
-other desktops — over a private WireGuard mesh, with a real certificate, and without the
-user ever opening a port, entering an IP or installing a certificate.
+Share folders, stream video and print from a Windows machine to your phone and other
+desktops, without ever opening a port, entering an IP or installing a certificate.
 
-For an ordinary user the whole setup is: **install → one click to sign in → scan a QR code**.
-Advanced users can point the same install at their own self-hosted Headscale instead of
-Tailscale, and switch back, without reinstalling.
+**On your own Wi-Fi it needs no account.** Install it, point it at a folder, and a phone on
+the same network reaches your library — no sign-in, no coordination server, no certificate
+authority. Setup is: **install → choose a folder → type a four-character code on the phone**.
+
+Reaching the machine from *somewhere else* is a switch you turn on, and the only part that
+wants an account. It puts the machine on a private WireGuard mesh with a real Let's Encrypt
+certificate on its own hostname, so nothing has to be exposed to the internet. Advanced users
+can point the same install at their own self-hosted Headscale instead of Tailscale, and
+switch back, without reinstalling.
+
+One honest cost of the no-account path: a plain-HTTP origin is not a secure context, so on
+the phone there is no camera (pair by typing the code rather than scanning) and no offline
+library. Turning on remote access restores both.
 
 ## Layout
 
@@ -74,25 +83,28 @@ Full detail, in English and Persian: [`docs/prerequisites.md`](docs/prerequisite
 
 ## State of the build
 
-`npm run build`, `npm test` and `npm run typecheck` are all green: **575 tests** across seven
-workspaces (server 353, ui-kit 107, client-core 74, PWA 16, contract 16, panel 5, client 4).
+`npm run build`, `npm test` and `npm run typecheck` are green: **606 tests** across seven
+workspaces, plus five Go packages in `native/netedge`. CI runs the same on every push and the
+release workflow runs it again before it will publish anything.
 
-Two things are deliberately *not* proven here, and neither is a detail:
+Proven on this machine: byte-exact range reads across the 4 GiB boundary against a real 5 GiB
+sparse file; a flat descriptor count after 500 abandoned streams; instant token revocation;
+the operator API refusing a non-loopback socket; a service worker that attaches the bearer to
+media requests and to nothing cross-origin; the packaged app answering a phone on this
+machine's own LAN address with no sign-in at all; and `netedge` reaching `login-required` with
+a live sign-in URL.
 
-- **`netedge` has never been compiled.** Go is not installed on the development machine, so
-  the sidecar is written and reviewed but unbuilt. Nine `// VERIFY:` comments mark every
-  upstream tsnet or certmagic API taken from documentation rather than from a compiler.
-  Nothing in this repository has yet made a WireGuard connection.
+Still **not** proven, and neither is a detail:
+
+- **No Tailscale sign-in has been completed**, because that needs credentials. Everything up
+  to the browser hand-off is exercised; the hop from `login-required` to `connected` is
+  covered by unit tests and by reading the code, not by a live run. Nothing here has yet
+  carried traffic over WireGuard.
 - **No real device has connected.** Seeking a 4K file over cellular, printing from another
   network, the iOS Files app against the WebDAV mount, and switching between the default
   coordination server and a personal Headscale are all in
   [`docs/acceptance-checklist.md`](docs/acceptance-checklist.md), because only hardware can
   settle them.
-
-What *is* proven on this machine: byte-exact range reads across the 4 GiB boundary against a
-real 5 GiB sparse file, a flat descriptor count after 500 abandoned streams, instant token
-revocation, the operator API refusing a non-loopback socket, and a service worker that
-attaches the bearer to media requests and to nothing cross-origin.
 
 Before packaging, drop `SumatraPDF.exe` into `vendor/bin` — see
 [`vendor/README.md`](vendor/README.md). Without it everything works except printing, which
