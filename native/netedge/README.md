@@ -208,6 +208,12 @@ the auth URL and keeps polling until the node reports `Running`, then publishes 
 **Electron opens the URL.** netedge runs headless as a child process and has no business
 deciding what the user's screen does.
 
+A key can also expire *after* the node has connected, and signing out does the same thing on
+purpose. The connected node's watcher polls the daemon every thirty seconds and publishes
+`login-required` again when that happens, so the tray never shows a green dot for a node that
+has stopped carrying traffic; when the node is signed in again it publishes `connected` and
+the listener, which was never torn down, goes on serving.
+
 ## Layout
 
 ```

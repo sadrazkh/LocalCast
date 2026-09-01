@@ -45,11 +45,22 @@ var legalTransitions = map[protocol.EdgeState][]protocol.EdgeState{
 	},
 	protocol.StateObtainingCertificate: {
 		protocol.StateConnected,
+		// A DNS-01 issuance takes minutes, and both a revoked key and POST /edge/logout can
+		// land inside that window. While this was missing, signing out during an issuance
+		// answered 204 and changed nothing on screen.
+		protocol.StateLoginRequired,
 	},
 	protocol.StateConnected: {
 		// A renewal re-enters obtaining-certificate; a dropped tailnet re-enters connecting.
 		protocol.StateObtainingCertificate,
 		protocol.StateConnecting,
+		// A key that expires after the node has connected drops the backend back to
+		// NeedsLogin, and POST /edge/logout puts it there deliberately. This is the mirror
+		// image of the login-required -> connected gap above and it lies in the more dangerous
+		// direction: while it was missing, the tray went on showing a green dot for a node
+		// that had stopped carrying traffic. Edge.watch is what notices the expiry; nothing
+		// else is looking, because waitForRunning returned once the node first came up.
+		protocol.StateLoginRequired,
 	},
 	protocol.StateError: {},
 }

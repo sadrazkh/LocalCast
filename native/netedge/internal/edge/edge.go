@@ -43,8 +43,13 @@ const (
 	// not tie this package to the shape of ipn.Notify.
 	statusPollInterval = 500 * time.Millisecond
 
-	// peerPollInterval is how often the connected node refreshes its peer count and
-	// certificate expiry for the tray.
+	// peerPollInterval is how often a connected node re-reads the daemon: its peer count and
+	// certificate expiry for the tray, and — the part that is not merely cosmetic — whether it
+	// is still signed in.
+	//
+	// It stays coarse. The loop runs until the process exits, so anything faster would be a
+	// wakeup a second for a value that changes every few months, and the cost of noticing an
+	// expired key half a minute late is half a minute of a stale tray icon.
 	peerPollInterval = 30 * time.Second
 
 	// shutdownTimeout bounds each stage of tearing a generation down, so a wedged tsnet
@@ -65,9 +70,10 @@ const (
 	// seconds during which Status reports NeedsLogin with an empty AuthURL and there is
 	// nothing for the sign-in button to open.
 	//
-	// The nudge is kept rather than deleted because tsnet only makes that call once, at start:
-	// a node whose key is revoked later drops back to NeedsLogin with nobody asking on its
-	// behalf. It now fires only once tsnet's own attempt has visibly produced nothing.
+	// The nudge is kept rather than deleted because tsnet only makes that call once, at start,
+	// and it fires only once tsnet's own attempt has visibly produced nothing. A node whose
+	// key expires *after* it has connected is past this loop entirely; reconcileAuth applies
+	// the same rule there, paced by peerPollInterval instead of by this delay.
 	loginNudgeDelay = 10 * time.Second
 )
 
@@ -464,7 +470,7 @@ func (e *Edge) bringUp(ctx context.Context, inst *instance, cfg protocol.Network
 	if err := e.opts.Status.SetConnected(host, "", provider.ExpiresAt()); err != nil {
 		e.opts.Logf(protocol.LogWarn, "%v", err)
 	}
-	go e.watch(ctx, inst)
+	go e.watch(ctx, inst, connectedIdentity{host: host}, peerPollInterval)
 	return nil
 }
 
@@ -498,7 +504,7 @@ func (e *Edge) serveFunnel(ctx context.Context, inst *instance, host string) err
 		e.opts.Logf(protocol.LogWarn, "%v", err)
 	}
 	e.opts.Logf(protocol.LogInfo, "published on the public internet at %s", funnelURL)
-	go e.watch(ctx, inst)
+	go e.watch(ctx, inst, connectedIdentity{host: host, funnelURL: funnelURL}, peerPollInterval)
 	return nil
 }
 
@@ -597,11 +603,54 @@ func (e *Edge) waitForRunning(ctx context.Context, inst *instance, cfg protocol.
 	}
 }
 
-// watch keeps the peer count and the certificate expiry current for the tray. It is
-// informational: nothing in the serving path depends on it.
-func (e *Edge) watch(ctx context.Context, inst *instance) {
-	ticker := time.NewTicker(peerPollInterval)
+// connectedIdentity is what watch re-publishes when a node that lost its authentication gets
+// it back: the same host and Funnel URL bringUp published, rather than a fresh guess. Both
+// belong to the generation watch was started for and cannot change while it runs, and the
+// listener that serves them is never torn down by a sign-out.
+type connectedIdentity struct {
+	host      string
+	funnelURL string
+}
+
+// authEpisode is watch's memory of one uninterrupted stretch of the node not being signed in.
+// Without it, every poll would repeat the same log line and the same nudge for as long as the
+// user takes to sign in, which can be days.
+type authEpisode struct {
+	// active is set on the first poll of an episode and cleared when the node is Running
+	// again, so the log line below is written once per episode rather than once per poll.
+	active bool
+
+	// owned records that watch, and not an explicit sign-out, published this episode. Logout
+	// deliberately parks the machine at login-required *without* fetching a URL, because the
+	// user just asked to sign out; asking the control server for a fresh link here would undo
+	// exactly what they asked for.
+	owned bool
+
+	// sawNoURL records that an earlier poll in this episode already found NeedsLogin with no
+	// interactive URL. The nudge waits for it: after an expiry the daemon is usually
+	// re-authenticating on its own, and StartLoginInteractive while that is in flight cancels
+	// the pending control-key fetch — see loginNudgeDelay for the measured cost.
+	sawNoURL bool
+
+	nudged bool
+}
+
+// watch keeps the published status true for the life of one generation.
+//
+// The peer count and the certificate expiry are informational. The backend state is not: a
+// node whose key expires after it has connected drops back to NeedsLogin, and nothing else in
+// the process is looking, because waitForRunning returned the moment the node first came up.
+// Without this poll the tray would go on showing "connected" for a node that has silently
+// stopped carrying traffic.
+//
+// every is a parameter rather than the constant so a test can drive the loop without waiting
+// a poll interval per iteration. Production passes peerPollInterval, which is deliberately
+// coarse: this runs until the process exits, and an expiring key is not a sub-second event.
+func (e *Edge) watch(ctx context.Context, inst *instance, id connectedIdentity, every time.Duration) {
+	ticker := time.NewTicker(every)
 	defer ticker.Stop()
+
+	var ep authEpisode
 
 	for {
 		select {
@@ -610,12 +659,94 @@ func (e *Edge) watch(ctx context.Context, inst *instance) {
 		case <-ticker.C:
 		}
 
+		// A daemon that will not answer is not evidence of a sign-out, so a failed poll leaves
+		// both the published status and the episode exactly as they were.
 		if st, err := inst.lc.Status(ctx); err == nil {
+			// Authentication first: if the node has dropped out, the peer count that follows
+			// is a detail about a node that is not carrying traffic anyway.
+			e.reconcileAuth(ctx, inst, st, id, &ep)
 			e.opts.Status.SetPeers(onlinePeers(st))
 		}
 		if _, certs := inst.parts(); certs != nil {
 			e.opts.Status.SetCertExpiry(certs.ExpiresAt())
 		}
+	}
+}
+
+// reconcileAuth publishes the difference between what the daemon reports and what the tray is
+// showing.
+//
+// Every path through it is a no-op unless something actually changed. It runs for the life of
+// the process, so a stable node — connected, or waiting for a sign-in the user has not got to
+// yet — must produce neither a status event nor a log line.
+func (e *Edge) reconcileAuth(ctx context.Context, inst *instance, st *ipnstate.Status, id connectedIdentity, ep *authEpisode) {
+	switch st.BackendState {
+	case ipn.NeedsLogin.String(), ipn.NeedsMachineAuth.String():
+		if !ep.active {
+			ep.active = true
+			// Whoever published login-required first owns the episode. Logout gets there
+			// first on the path the user chose, and this is how watch tells "the key expired
+			// under us" from "the user signed out a moment ago".
+			ep.owned = e.opts.Status.Get().State != protocol.StateLoginRequired
+			if ep.owned {
+				e.opts.Logf(protocol.LogWarn,
+					"the tailnet node is no longer signed in and cannot carry traffic until it is")
+			}
+		}
+		if !ep.owned {
+			return
+		}
+
+		if st.AuthURL != "" {
+			// publish, not SetLoginRequired: the same URL is reported on every poll until the
+			// user signs in, and it may also have arrived through tsnet's log first. Only a
+			// genuine change reaches the tray.
+			inst.login.publish(st.AuthURL)
+			return
+		}
+
+		// There is no URL yet, but the node is already unauthenticated. Say so now: a tray
+		// that goes on claiming "connected" is the lie this poll exists to stop, and the link
+		// can follow when there is one.
+		if e.opts.Status.Get().State != protocol.StateLoginRequired {
+			if err := e.opts.Status.SetLoginRequired(""); err != nil {
+				e.opts.Logf(protocol.LogWarn, "%v", err)
+			}
+		}
+
+		switch {
+		case !ep.sawNoURL:
+			// Give the daemon one poll to produce a URL by itself. See authEpisode.sawNoURL.
+			ep.sawNoURL = true
+		case !ep.nudged:
+			ep.nudged = true
+			e.opts.Logf(protocol.LogInfo, "no login URL from the daemon; asking the control server for one")
+			if err := inst.lc.StartLoginInteractive(ctx); err != nil {
+				e.opts.Logf(protocol.LogWarn, "could not start an interactive login: %v", err)
+			}
+		}
+
+	case ipn.Running.String():
+		*ep = authEpisode{}
+
+		// The common case, on every poll of a healthy node: the tray already says connected,
+		// so there is nothing to publish.
+		if e.opts.Status.Get().State != protocol.StateLoginRequired {
+			return
+		}
+
+		// The listener was never torn down, so a node that is signed in again is serving
+		// again — whether it lost its key or the user signed out and back in. Re-entering
+		// connected also drops the consumed login URL; see clearStaleFields.
+		var expires *int64
+		if _, certs := inst.parts(); certs != nil {
+			expires = certs.ExpiresAt()
+		}
+		if err := e.opts.Status.SetConnected(id.host, id.funnelURL, expires); err != nil {
+			e.opts.Logf(protocol.LogWarn, "%v", err)
+			return
+		}
+		e.opts.Logf(protocol.LogInfo, "the tailnet node is signed in again and serving as %s", id.host)
 	}
 }
 

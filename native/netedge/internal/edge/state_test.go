@@ -47,6 +47,8 @@ func TestCanTransition(t *testing.T) {
 		{login, cert, true, "signed in and the node was already up"},
 		{login, connected, true, "funnel and external-proxy hold no certificate and skip that step"},
 		{connecting, login, true, "the key was revoked mid-connect"},
+		{connected, login, true, "the key expired after the node had connected, or the user signed out"},
+		{cert, login, true, "a sign-out during a DNS-01 issuance, which takes minutes"},
 
 		// restart in place: spec 2.4 says switching control planes must not exit the process
 		{connected, starting, true, "restart in place"},
@@ -79,8 +81,8 @@ func TestCanTransition(t *testing.T) {
 		{starting, connected, false, "connecting is not optional"},
 		{starting, cert, false, "the node must reach the control plane first"},
 		{cert, connecting, false, "certificates are not fetched before authentication"},
-		{cert, login, false, ""},
 		{failed, connected, false, "a failed node restarts, it does not resume"},
+		{failed, login, false, "signing out of a failed generation does not make it resumable"},
 		{failed, connecting, false, ""},
 
 		// nonsense states
