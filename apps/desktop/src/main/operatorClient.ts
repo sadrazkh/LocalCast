@@ -15,7 +15,10 @@ export class OperatorClient {
   ) {}
 
   async #call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`http://127.0.0.1:${this.port}/operator/v1${path}`, {
+    // The server mounts this router at OPERATOR_PREFIX, which is `/operator` with no version
+    // segment — it is loopback-only and ships with the app, so it has no independent
+    // lifetime to version against.
+    const res = await fetch(`http://127.0.0.1:${this.port}/operator${path}`, {
       method,
       headers: {
         'content-type': 'application/json',

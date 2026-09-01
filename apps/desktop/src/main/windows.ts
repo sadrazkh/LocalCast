@@ -1,5 +1,11 @@
 import { BrowserWindow, screen, shell } from 'electron';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// The main process is ESM, where `__dirname` does not exist. Reaching for it throws at the
+// moment the first window is created — after the server is already listening, which makes it
+// look like a networking failure rather than a module-format mistake.
+const here = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Window construction. Three surfaces, all loading the same renderer bundle at different
@@ -29,7 +35,7 @@ function load(win: BrowserWindow, route: string): void {
   if (isDev) {
     void win.loadURL(`${process.env.VITE_DEV_SERVER_URL}#${route}`);
   } else {
-    void win.loadFile(join(__dirname, '..', 'renderer', 'index.html'), { hash: route });
+    void win.loadFile(join(here, '..', 'renderer', 'index.html'), { hash: route });
   }
 }
 

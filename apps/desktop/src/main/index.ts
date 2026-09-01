@@ -43,20 +43,60 @@ if (!app.requestSingleInstanceLock()) {
       openPanel();
     }
   });
-  void bootstrap();
+  // Nothing in bootstrap is allowed to fail silently. Without this catch a startup error
+  // surfaces as an UnhandledPromiseRejectionWarning on a console nobody is reading, and the
+  // user sees an app that started and then did nothing at all.
+  void bootstrap().catch((err: unknown) => {
+    void reportFatal(err);
+  });
+}
+
+/**
+ * Last-resort failure reporting.
+ *
+ * Startup problems are almost always environmental — a native module built for the wrong
+ * ABI, a missing sidecar, a data directory that cannot be written — so the message names the
+ * thing that failed and what to do about it, and the window stays closed rather than opening
+ * onto a UI wired to nothing.
+ */
+async function reportFatal(err: unknown): Promise<void> {
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  console.error('[main] startup failed:', detail);
+
+  try {
+    await app.whenReady();
+    dialog.showErrorBox(
+      'LocalCast could not start',
+      `${err instanceof Error ? err.message : String(err)}\n\n${detail}`,
+    );
+  } catch {
+    // If even the dialog cannot be shown there is nothing left to try.
+  }
+  app.exit(1);
 }
 
 function paths() {
   const dataDir = join(app.getPath('appData'), 'LocalCast');
+  const appRoot = app.getAppPath();
+  // In development `app.getAppPath()` is apps/desktop, so the repo root is two levels up.
+  // `process.resourcesPath` must not be used here: unpackaged, it points inside Electron's
+  // own installation, which is how webRoot ended up at electron/dist/resources/web.
+  const repoRoot = join(appRoot, '..', '..');
+
   return {
     dataDir,
     tempDir: join(dataDir, 'tmp'),
-    vendorDir: isDev
-      ? join(app.getAppPath(), '..', '..', 'vendor', 'bin')
-      : join(process.resourcesPath, 'vendor'),
-    assetsDir: isDev ? join(app.getAppPath(), 'assets') : join(process.resourcesPath, 'assets'),
-    webRoot: isDev ? '' : join(process.resourcesPath, 'web'),
-    preloadDir: join(app.getAppPath(), 'dist', 'preload'),
+    vendorDir: app.isPackaged ? join(process.resourcesPath, 'vendor') : join(repoRoot, 'vendor', 'bin'),
+    assetsDir: app.isPackaged ? join(process.resourcesPath, 'assets') : join(appRoot, 'assets'),
+    // Vite serves the PWA itself while its dev server is up; otherwise the built bundle is
+    // served from this origin so a phone needs no second address.
+    webRoot: isDev
+      ? ''
+      : app.isPackaged
+        ? join(process.resourcesPath, 'web')
+        : join(repoRoot, 'apps', 'pwa', 'dist'),
+    preloadDir: join(appRoot, 'dist', 'preload'),
+    repoRoot,
   };
 }
 
