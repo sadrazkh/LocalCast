@@ -1,0 +1,19 @@
+# Normalise line endings so the repo is identical whichever machine it is cloned on.
+* text=auto eol=lf
+
+# Windows-only build inputs that some tooling insists on reading as CRLF.
+*.cmd    text eol=crlf
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# The Headscale setup script is run on a Linux VPS; CRLF would break its shebang.
+*.sh     text eol=lf
+
+# Generated and binary assets: never touched, never diffed as text.
+*.png    binary
+*.woff2  binary
+*.exe    binary
+*.db     binary
+
+# Lockfiles are generated; keep them out of review diffs.
+package-lock.json  -diff linguist-generated=true
