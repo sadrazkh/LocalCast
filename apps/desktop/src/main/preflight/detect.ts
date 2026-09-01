@@ -30,6 +30,19 @@ const execFileAsync = promisify(execFile);
 
 // ─── netedge ──────────────────────────────────────────────────────────────────
 
+/**
+ * Degrading, not blocking.
+ *
+ * The sidecar is what lets another network reach this machine. On the same Wi-Fi it is not
+ * needed at all, and the product's own design started from exactly that: no internet, no
+ * account, just paired devices on one network. Treating it as a hard prerequisite meant a
+ * user with no Tailscale account had an app that refused to do anything — including the
+ * things that never needed an account.
+ *
+ * So its absence costs one feature and says so, like the missing print helper does.
+ */
+const NETEDGE_SEVERITY = 'degrading' as const;
+
 /** `go version go1.23.4 windows/amd64` */
 const GO_VERSION = /^go version go(\d+)\.(\d+)(?:\.(\d+))?/;
 
@@ -85,7 +98,7 @@ export async function detectNetEdge(ctx: PreflightContext): Promise<Prerequisite
 
   return {
     id: 'netedge',
-    severity: 'blocking',
+    severity: NETEDGE_SEVERITY,
     state: 'ok',
     searchedPaths: [binary],
     detail: '',
@@ -129,7 +142,7 @@ function netEdgeMissing(searched: string[], go: GoToolchain | null): Prerequisit
 
   return {
     id: 'netedge',
-    severity: 'blocking',
+    severity: NETEDGE_SEVERITY,
     state: 'missing',
     searchedPaths: searched,
     detail,

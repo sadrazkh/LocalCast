@@ -20,6 +20,16 @@ const appConfigSchema = z.object({
   startMinimised: z.boolean().default(true),
   /** Stable across restarts so paired devices keep resolving the same MagicDNS name. */
   hostname: z.string().min(1).default('localcast'),
+  /**
+   * Share over the local network. On by default, and the reason signing in is optional: a
+   * phone on the same Wi-Fi reaches the library with no account and no coordination server.
+   */
+  shareOnLan: z.boolean().default(true),
+  /**
+   * Reach this machine from other networks. Off until the user asks for it — it is the only
+   * part of the product that needs an account, and most people never leave the house with it.
+   */
+  remoteAccess: z.boolean().default(false),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;

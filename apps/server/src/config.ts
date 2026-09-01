@@ -47,6 +47,18 @@ export interface ServerConfig {
    * node_modules. Electron sets this; tests and the CLI leave it empty.
    */
   nativeBinding: string;
+  /**
+   * Also listen on the local network, not only on loopback.
+   *
+   * This is what makes signing in optional. `netedge` is for reaching the machine from
+   * somewhere else; on the same Wi-Fi nothing needs a coordination server, an account or a
+   * certificate authority, and the original design was explicit that it should not.
+   *
+   * The cost is real and is stated where the user turns it on: a plain-HTTP origin is not a
+   * secure context, so the phone gets no service worker (no offline library) and no camera
+   * (pair by typing the four-character code instead). Everything else works.
+   */
+  lan: boolean;
   logLevel: LogLevel;
 }
 
@@ -89,6 +101,7 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     indexOnStart: overrides.indexOnStart ?? true,
     webRoot: overrides.webRoot ?? '',
     nativeBinding: overrides.nativeBinding ?? '',
+    lan: overrides.lan ?? false,
     logLevel: overrides.logLevel ?? 'info',
   };
 }

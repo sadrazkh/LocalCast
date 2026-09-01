@@ -22,14 +22,28 @@ declare module 'express-serve-static-core' {
  * nothing else on the machine knows it. Without this, any local process — a browser tab, a
  * bit of malware — could reach the whole API by pointing at 127.0.0.1.
  */
-export function edgeSecretGuard(secret: string): RequestHandler {
+export function edgeSecretGuard(secret: string, options: { lanAllowed?: boolean } = {}): RequestHandler {
   return (req, _res, next) => {
     const presented = req.header(EDGE_SECRET_HEADER);
-    if (!secureEquals(presented, secret)) {
-      next(new ApiException(ErrorCode.UNAUTHENTICATED, 'Missing or invalid edge credentials'));
+    if (secureEquals(presented, secret)) {
+      next();
       return;
     }
-    next();
+    /**
+     * Local-network mode: the secret only ever existed to stop another process on this
+     * machine reaching the API by guessing a loopback port, back when `netedge` was the only
+     * way in. Once the operator has deliberately shared over the LAN there is no edge to
+     * inject it, and a phone on the same Wi-Fi cannot be asked to know it.
+     *
+     * Nothing is given away by allowing this through. Every route below still demands a
+     * device token, and the operator API — the surface that grants access — is mounted behind
+     * its own loopback check, which this flag does not touch.
+     */
+    if (options.lanAllowed) {
+      next();
+      return;
+    }
+    next(new ApiException(ErrorCode.UNAUTHENTICATED, 'Missing or invalid edge credentials'));
   };
 }
 

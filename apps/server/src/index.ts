@@ -102,8 +102,10 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
 
   app.use(express.json({ limit: '1mb' }));
   app.use(peerContext());
-  // Nothing below this line is reachable without the secret `netedge` injects.
-  app.use(edgeSecretGuard(config.edgeSecret));
+  // Nothing below this line is reachable without the secret `netedge` injects — unless the
+  // operator has turned on local-network sharing, where there is no edge to inject it and the
+  // device token is the credential that matters.
+  app.use(edgeSecretGuard(config.edgeSecret, { lanAllowed: config.lan }));
 
   app.use(OPERATOR_PREFIX, createOperatorRouter({ ctx, tokens, pairing, indexer, activity }));
 
@@ -162,9 +164,11 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     listen(port = config.port): Promise<AddressInfo> {
       return new Promise((resolve, reject) => {
         server.once('error', reject);
-        // Loopback only. `netedge` is the only thing in front of us and it is on this
-        // machine; binding 0.0.0.0 would put the API on the LAN.
-        server.listen(port, config.host, () => {
+        // 0.0.0.0 when the operator has chosen to share over the local network, loopback
+        // otherwise — where `netedge` is the only thing in front of us and is on this
+        // machine. The operator API is unaffected either way: it carries its own loopback
+        // check, so opening the LAN listener never exposes the surface that grants access.
+        server.listen(port, config.lan ? '0.0.0.0' : config.host, () => {
           listening = true;
           server.off('error', reject);
           const addr = server.address() as AddressInfo;

@@ -23,6 +23,8 @@ export interface ServerHostOptions {
    * node_modules, which npm builds for Node — the wrong shape for this runtime.
    */
   nativeBinding: string;
+  /** Listen on the local network too, so a phone on the same Wi-Fi needs no sign-in. */
+  lan: boolean;
 }
 
 export interface ServerHandle {
@@ -80,6 +82,7 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
     webRoot: options.webRoot,
     version: options.version,
     nativeBinding: options.nativeBinding,
+    lan: options.lan,
     host: '127.0.0.1',
     // 0 asks the OS for a free port. Nothing outside this process needs to predict it —
     // netedge is told the number after the fact.

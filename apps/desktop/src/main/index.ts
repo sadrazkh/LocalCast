@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { AppConfigStore, configPathFor } from './appConfig.js';
@@ -99,6 +100,26 @@ function portableRoot(): string | null {
     return join(dirname(app.getPath('exe')), 'LocalCast-data');
   }
   return null;
+}
+
+/**
+ * This machine's address on the local network, or null when it has none.
+ *
+ * Skips loopback and link-local, and prefers a private range — a VPN or a container bridge
+ * can otherwise supply an address no phone in the house can reach.
+ */
+function lanAddress(): string | null {
+  const candidates: string[] = [];
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family !== 'IPv4' || address.internal) continue;
+      if (address.address.startsWith('169.254.')) continue;
+      candidates.push(address.address);
+    }
+  }
+  const isPrivate = (ip: string) =>
+    ip.startsWith('192.168.') || ip.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
+  return candidates.find(isPrivate) ?? candidates[0] ?? null;
 }
 
 function paths() {
@@ -256,6 +277,7 @@ async function bootstrap(): Promise<void> {
       // Falls back to node_modules when the side copy has not been built; the prerequisites
       // screen has already told the user which command produces it.
       nativeBinding: existsSync(p.nativeBinding) ? p.nativeBinding : '',
+      lan: appConfig.get().shareOnLan,
     });
   } catch (err) {
     if (err instanceof ServerNotBuilt) {
@@ -315,7 +337,17 @@ async function bootstrap(): Promise<void> {
 
   broadcastEdgeStatus(edge);
 
-  if (binaryPath) {
+  // The address a phone on the same Wi-Fi types or scans. Published before netedge has said
+  // anything, because on a local network there is nothing to wait for: no sign-in, no
+  // coordination server, no certificate.
+  if (appConfig.get().shareOnLan) {
+    const lan = lanAddress();
+    if (lan) serverHandle.setPublicHost(`${lan}:${serverHandle.port}`);
+  }
+
+  // Only when the user has asked to be reachable from elsewhere. Starting it unasked is what
+  // made the app look broken: it sat on a sign-in screen for a feature most people never use.
+  if (binaryPath && appConfig.get().remoteAccess) {
     // Failure to come up is a state the UI already knows how to show, so it is surfaced
     // through the status stream rather than thrown into a dialog the user cannot act on.
     void edge.start().catch((err: unknown) => {
