@@ -1,6 +1,12 @@
 import { vi } from 'vitest';
 import type { EdgeStatus, EdgeTestResult } from '@localcast/contract';
 import type { DesktopApi } from '../../shared/ipc.js';
+import type {
+  PreflightReport,
+  PrerequisiteId,
+  PrerequisiteStatus,
+} from '../../shared/preflight.js';
+import type { PreflightApi } from '../preflight/api.js';
 
 /**
  * A stand-in for `window.localcast`.
@@ -37,15 +43,48 @@ export const VIABLE_TEST: EdgeTestResult = {
   loginUrl: null,
 };
 
+/**
+ * Prerequisites, as the main process would report them once everything is in place.
+ *
+ * This is the default the fake answers with, so every test that is not about prerequisites
+ * behaves as it did before the screen existed: the wizard skips it and opens on step one.
+ */
+export const ALL_SATISFIED: PreflightReport = {
+  items: (['netedge', 'print-helper', 'native-modules'] as PrerequisiteId[]).map((id) => ({
+    id,
+    severity: id === 'print-helper' ? 'degrading' : 'blocking',
+    state: 'ok',
+    searchedPaths: [],
+    detail: '',
+    remedies: [],
+  })),
+  canProceed: true,
+  allSatisfied: true,
+  checkedAt: 0,
+};
+
+/**
+ * `preflight` is overridable one method at a time — `Partial<DesktopApi>` alone would demand
+ * the whole bridge. Tests deliberately install partial bridges, because the renderer
+ * feature-detects each method and both states have to be reachable from a test.
+ */
+export type FakeApiOverrides = Omit<Partial<DesktopApi>, 'preflight'> & {
+  preflight?: Partial<PreflightApi>;
+};
+
 export interface FakeApi {
   api: DesktopApi;
   /** Pushes a status frame to every subscriber, as the main process would. */
   emit(status: EdgeStatus): void;
   listeners: ((status: EdgeStatus) => void)[];
+  /** Pushes one changed prerequisite, or a whole replacement report. */
+  emitPreflight(payload: PrerequisiteStatus | PreflightReport): void;
+  preflightListeners: ((payload: PrerequisiteStatus | PreflightReport) => void)[];
 }
 
-export function createFakeApi(overrides: Partial<DesktopApi> = {}): FakeApi {
+export function createFakeApi(overrides: FakeApiOverrides = {}): FakeApi {
   const listeners: ((status: EdgeStatus) => void)[] = [];
+  const preflightListeners: ((payload: PrerequisiteStatus | PreflightReport) => void)[] = [];
   let status: EdgeStatus = OFFLINE_STATUS;
 
   const api = {
@@ -135,19 +174,45 @@ export function createFakeApi(overrides: Partial<DesktopApi> = {}): FakeApi {
       openExternal: vi.fn(),
       ...overrides.app,
     },
+    preflight: {
+      run: vi.fn(async () => ALL_SATISFIED),
+      install: vi.fn(async (id: PrerequisiteId) => ({
+        ok: true as const,
+        id,
+        installedTo: `C:\\Users\\sara\\AppData\\Local\\LocalCast\\vendor\\${id}`,
+      })),
+      onProgress: (handler: (payload: PrerequisiteStatus | PreflightReport) => void) => {
+        preflightListeners.push(handler);
+        return () => {
+          const i = preflightListeners.indexOf(handler);
+          if (i >= 0) preflightListeners.splice(i, 1);
+        };
+      },
+      openDoc: vi.fn(async () => undefined),
+      runCommand: vi.fn(async (id: PrerequisiteId) => ({
+        ok: true as const,
+        id,
+        installedTo: `C:\\Users\\sara\\AppData\\Local\\LocalCast\\vendor\\${id}`,
+      })),
+      ...overrides.preflight,
+    },
   } as unknown as DesktopApi;
 
   return {
     api,
     listeners,
+    preflightListeners,
     emit(next: EdgeStatus) {
       status = next;
       for (const listener of [...listeners]) listener(next);
     },
+    emitPreflight(payload: PrerequisiteStatus | PreflightReport) {
+      for (const listener of [...preflightListeners]) listener(payload);
+    },
   };
 }
 
-export function installFakeApi(overrides: Partial<DesktopApi> = {}): FakeApi {
+export function installFakeApi(overrides: FakeApiOverrides = {}): FakeApi {
   const fake = createFakeApi(overrides);
   (globalThis as unknown as { localcast: DesktopApi }).localcast = fake.api;
   return fake;

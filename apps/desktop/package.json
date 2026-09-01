@@ -5,12 +5,16 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.node.json && vite build",
+    "start": "electron .",
+    "build": "npm run build:main && vite build",
+    "build:main": "tsc -p tsconfig.node.json",
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.json --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "package": "electron-builder --win nsis"
+    "package": "node ../../scripts/prepack.mjs && electron-builder --win nsis",
+    "//build:main": "Split out because `npm run dev` needs the main and preload output — Vite only serves the renderer — without paying for a renderer build it is about to replace.",
+    "//package": "prepack.mjs guarantees vendor/bin exists and names anything this installer will be missing. electron-builder only warns about a missing extraResources source, which is how you ship an installer with no netedge in it."
   },
   "dependencies": {
     "@localcast/client-core": "*",

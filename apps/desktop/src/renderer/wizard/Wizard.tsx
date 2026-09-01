@@ -11,6 +11,7 @@ import {
   useT,
 } from '@localcast/ui-kit';
 import { TitleBar } from '../components/TitleBar.js';
+import { PreflightStep } from '../preflight/PreflightStep.js';
 import { getApi, qrPayloadOf } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
 import { messageOf } from '../lib/useAsync.js';
@@ -36,22 +37,36 @@ const TOTAL_STEPS = 3;
 export function Wizard() {
   const [step, setStep] = useState(0);
   const [folderId, setFolderId] = useState<string | null>(null);
+  /**
+   * The prerequisites screen sits ahead of step one and clears itself the moment it has
+   * nothing to report — including on the first render, so a user with everything in place
+   * never sees it. Counting "step 1 of 3" while a piece of the app is missing would be
+   * counting the wrong thing, which is why the dots do not appear until this is cleared.
+   */
+  const [prerequisitesCleared, setPrerequisitesCleared] = useState(false);
+  const clearPrerequisites = useCallback(() => setPrerequisitesCleared(true), []);
 
   return (
     <div className={styles.window}>
       <TitleBar />
       <main className={styles.body}>
-        <StepDots current={step} />
-        {step === 0 ? (
-          <FolderStep
-            onDone={(id) => {
-              setFolderId(id);
-              setStep(1);
-            }}
-          />
-        ) : null}
-        {step === 1 ? <SignInStep onConnected={() => setStep(2)} /> : null}
-        {step === 2 ? <PairingStep folderId={folderId} /> : null}
+        {prerequisitesCleared ? (
+          <>
+            <StepDots current={step} />
+            {step === 0 ? (
+              <FolderStep
+                onDone={(id) => {
+                  setFolderId(id);
+                  setStep(1);
+                }}
+              />
+            ) : null}
+            {step === 1 ? <SignInStep onConnected={() => setStep(2)} /> : null}
+            {step === 2 ? <PairingStep folderId={folderId} /> : null}
+          </>
+        ) : (
+          <PreflightStep onDone={clearPrerequisites} />
+        )}
       </main>
     </div>
   );

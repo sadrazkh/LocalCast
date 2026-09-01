@@ -1,0 +1,43 @@
+/* Compact by design: one line the operator can ignore, that opens into the same remedies the
+   wizard offered. */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+  inline-size: 100%;
+  padding: var(--lc-space-3) var(--lc-space-4);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-warning);
+  border-radius: var(--lc-radius-md);
+  text-align: start;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+}
+
+.icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--lc-warning);
+}
+
+.text {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--lc-fs-sm);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-text-secondary);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

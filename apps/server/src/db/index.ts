@@ -13,6 +13,16 @@ export interface OpenDatabaseOptions {
   log?: Logger;
   /** Skip migrations when a caller wants to inspect a raw file. Defaults to false. */
   skipMigrations?: boolean;
+  /**
+   * Path to a `better_sqlite3.node` built for the host runtime, when it is not the one in
+   * `node_modules`.
+   *
+   * A compiled binding is tied to one ABI, and this project has two hosts: Node runs the
+   * tests, Electron runs the app. Rebuilding in place makes them take turns — whichever ran
+   * last works and the other dies on `NODE_MODULE_VERSION`. Keeping `node_modules` on Node's
+   * ABI and pointing Electron at its own copy lets both work at once.
+   */
+  nativeBinding?: string;
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -132,7 +142,9 @@ export function openDatabase(opts: OpenDatabaseOptions): Db {
     fs.mkdirSync(path.dirname(opts.path), { recursive: true });
   }
 
-  const db = new Database(opts.path);
+  const db = opts.nativeBinding
+    ? new Database(opts.path, { nativeBinding: opts.nativeBinding })
+    : new Database(opts.path);
 
   // WAL lets the indexer write while a range request reads. `foreign_keys` is per-connection
   // in SQLite and off by default, so the CASCADE rules in the schema are inert without it.

@@ -53,7 +53,11 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   // otherwise accumulate a gigabyte at a time.
   cleanDirectory(config.tempDir, log);
 
-  const db = openDatabase({ path: config.dbPath, log });
+  const db = openDatabase({
+    path: config.dbPath,
+    ...(config.nativeBinding ? { nativeBinding: config.nativeBinding } : {}),
+    log,
+  });
 
   const activity = new SqliteActivityLog(db, log);
   const events = new InMemoryEventBus({

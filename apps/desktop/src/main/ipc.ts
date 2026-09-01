@@ -13,7 +13,15 @@ import type { AppConfigStore } from './appConfig.js';
  */
 
 export interface IpcDeps {
-  edge: NetEdge;
+  /**
+   * Getters, not instances.
+   *
+   * Handlers are registered before the server and the sidecar exist, because the
+   * prerequisites screen opens first and a window whose calls answer "No handler registered"
+   * is exactly the silent failure this whole subsystem was added to prevent. Reaching a
+   * handler too early now gets a typed, catchable error the UI can render.
+   */
+  edge: () => NetEdge | null;
   operator: () => OperatorClient;
   appConfig: AppConfigStore;
   version: string;
@@ -21,31 +29,67 @@ export interface IpcDeps {
   restartEdge: (config: NetworkConfig) => Promise<EdgeStatus>;
 }
 
-function redact(config: NetworkConfig & { authKey?: string; dnsApiToken?: string }): RedactedNetworkConfig {
-  const { authKey, dnsApiToken, ...rest } = config;
-  return { ...rest, hasAuthKey: !!authKey, hasDnsApiToken: !!dnsApiToken };
+/**
+ * Strips secrets before anything reaches the renderer.
+ *
+ * The presence flags fall back to what the server reported. The server correctly never
+ * returns the ciphertext — it holds DPAPI blobs it has no key for — so deriving presence
+ * only from a field that is always absent would tell every user "no key stored" even with a
+ * Headscale key on file, and invite them to retype one they already have.
+ */
+function redact(
+  config: NetworkConfig & {
+    authKey?: string;
+    dnsApiToken?: string;
+    hasAuthKey?: boolean;
+    hasDnsApiToken?: boolean;
+  },
+): RedactedNetworkConfig {
+  const { authKey, dnsApiToken, hasAuthKey, hasDnsApiToken, ...rest } = config;
+  return {
+    ...rest,
+    hasAuthKey: !!authKey || hasAuthKey === true,
+    hasDnsApiToken: !!dnsApiToken || hasDnsApiToken === true,
+  };
 }
+
+/** The status the UI shows before the sidecar exists — during the prerequisites gate. */
+const EDGE_NOT_STARTED: EdgeStatus = {
+  state: 'stopped',
+  host: null,
+  funnelUrl: null,
+  loginUrl: null,
+  errorCode: null,
+  errorMessage: null,
+  certExpiresAt: null,
+  peers: 0,
+  updatedAt: 0,
+};
 
 export function registerIpc(deps: IpcDeps): void {
   const { edge, operator, appConfig } = deps;
 
+  /** Throws a message the UI can show, rather than letting a null reach a property access. */
+  function requireEdge(): NetEdge {
+    const instance = edge();
+    if (!instance) throw new Error('The network component has not started yet.');
+    return instance;
+  }
+
   // ── network edge ───────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.edgeStatus, () => edge.status);
+  // Reads answer with a stopped status rather than throwing: the tray and the wizard poll
+  // this on mount, and during the prerequisites gate "not running" is the honest answer.
+  ipcMain.handle(IPC.edgeStatus, () => edge()?.status ?? EDGE_NOT_STARTED);
 
   // Every window that asks starts receiving pushes. Broadcasting to all of them keeps the
   // tray popover, the panel and the wizard showing the same state without a polling loop.
   ipcMain.handle(IPC.edgeSubscribe, () => undefined);
-  edge.on('status', (status) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(IPC.edgeEvent, status);
-    }
-  });
 
   ipcMain.handle(IPC.edgeTest, async (_e, raw: unknown) => {
     // Validate here rather than trusting the renderer: this is the call that decides whether
     // an impossible configuration gets saved.
     const config = networkConfigSchema.parse(raw);
-    return edge.test(config);
+    return requireEdge().test(config);
   });
 
   ipcMain.handle(IPC.edgeGetConfig, async () => {
@@ -59,7 +103,7 @@ export function registerIpc(deps: IpcDeps): void {
     // Refuse to save something the sidecar has already said cannot work. Without this, a
     // self-hosted control server asked to issue its own certificate would be stored and then
     // spin on "connecting…" forever.
-    const test = await edge.test(config);
+    const test = await requireEdge().test(config);
     if (!test.ok) {
       const reason = test.messages.find((m) => m.level === 'error')?.text ?? 'configuration is not viable';
       throw new Error(reason);
@@ -81,14 +125,14 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   ipcMain.handle(IPC.edgeLogin, async () => {
-    const url = await edge.requestLogin();
+    const url = await requireEdge().requestLogin();
     // Opened in the real browser on purpose: the user should be able to see the address bar
     // of the page they are typing their account password into.
     await shell.openExternal(url);
   });
 
-  ipcMain.handle(IPC.edgeStart, () => edge.start());
-  ipcMain.handle(IPC.edgeStop, () => edge.stop());
+  ipcMain.handle(IPC.edgeStart, () => requireEdge().start());
+  ipcMain.handle(IPC.edgeStop, () => requireEdge().stop());
 
   // ── folders ────────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.foldersList, () => operator().get('/folders'));
@@ -158,7 +202,7 @@ export function registerIpc(deps: IpcDeps): void {
     const cfg = appConfig.get();
     return {
       version: deps.version,
-      host: edge.status.host,
+      host: edge()?.status.host ?? null,
       serverPort: deps.serverPort(),
       locale: cfg.locale,
       setupComplete: cfg.setupComplete,
@@ -182,4 +226,21 @@ export function registerIpc(deps: IpcDeps): void {
     }
     await shell.openExternal(url);
   });
+}
+
+/**
+ * Fans the sidecar's status out to every window.
+ *
+ * Separate from `registerIpc` because the handlers are registered before the sidecar is
+ * constructed — the prerequisites screen has to be able to talk to the main process while
+ * nothing else is running yet. This is called once the instance exists.
+ */
+export function broadcastEdgeStatus(instance: NetEdge): () => void {
+  const send = (status: EdgeStatus) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.edgeEvent, status);
+    }
+  };
+  instance.on('status', send);
+  return () => instance.off('status', send);
 }

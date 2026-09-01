@@ -17,6 +17,7 @@ import { AddressField } from '../components/AddressField.js';
 import { TitleBar } from '../components/TitleBar.js';
 import { useCopy } from '../lib/copy.js';
 import { navigate } from '../lib/router.js';
+import { PreflightBanner } from '../preflight/index.js';
 import type { PanelSection } from '../lib/router.js';
 import { LibraryProvider, useLibrary } from '../state/library.js';
 import { useShell } from '../state/shell.js';
@@ -92,6 +93,12 @@ function PanelShell({ section }: { section: PanelSection }) {
           className={styles.rail}
         />
         <main className={styles.content}>
+          {/*
+            The way back from "ادامه بدون این". A user who dismissed a degrading prerequisite
+            during setup would otherwise have no route to printing ever working, since the
+            wizard never runs again.
+          */}
+          <PreflightBanner />
           {section === 'hosting' ? <HostingScreen /> : null}
           {section === 'folders' ? <FoldersScreen /> : null}
           {section === 'devices' ? <DevicesScreen /> : null}

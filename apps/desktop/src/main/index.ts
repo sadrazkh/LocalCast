@@ -1,11 +1,14 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { AppConfigStore, configPathFor } from './appConfig.js';
-import { registerIpc } from './ipc.js';
+import { broadcastEdgeStatus, registerIpc } from './ipc.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
+import type { PreflightContext } from './preflight/context.js';
+import { registerPreflightIpc } from './preflight/ipc.js';
+import { runPreflight } from './preflight/run.js';
 import { ensureSigningKey, mintEdgeSecret, SecretStorageUnavailable } from './secrets.js';
 import { ServerNotBuilt, startServer, type ServerHandle } from './serverHost.js';
 import { AppTray } from './tray.js';
@@ -23,6 +26,7 @@ import { createMainWindow, createTrayWindow, createWizardWindow } from './window
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
 let serverHandle: ServerHandle | null = null;
+let operatorClient: OperatorClient | null = null;
 let edge: NetEdge | null = null;
 let tray: AppTray | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -96,6 +100,11 @@ function paths() {
         ? join(process.resourcesPath, 'web')
         : join(repoRoot, 'apps', 'pwa', 'dist'),
     preloadDir: join(appRoot, 'dist', 'preload'),
+    // The Electron-ABI copy of better_sqlite3, kept out of node_modules so the Node-ABI copy
+    // there stays intact for the test suite. `scripts/rebuild-native.mjs` produces it.
+    nativeBinding: app.isPackaged
+      ? join(process.resourcesPath, 'native', 'better_sqlite3.node')
+      : join(repoRoot, 'vendor', 'native', `electron-${process.versions.modules}`, 'better_sqlite3.node'),
     repoRoot,
   };
 }
@@ -110,7 +119,72 @@ async function bootstrap(): Promise<void> {
   rmSync(p.tempDir, { recursive: true, force: true });
   mkdirSync(p.tempDir, { recursive: true });
 
+  // Prerequisites are checked before anything else is started. A sidecar that was never built
+  // or a better-sqlite3 compiled for Node rather than Electron used to surface as a stack
+  // trace on a console nobody reads; it is now the first screen, in plain language, with the
+  // fix attached to it.
+  const preflightCtx: PreflightContext = {
+    appRoot: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    repoRoot: p.repoRoot,
+    vendorDir: p.vendorDir,
+  };
+
+  // Non-null exactly while bootstrap is parked waiting for a blocking prerequisite to be
+  // fixed. Cleared before it is called, so a window closing in the same tick as the fix
+  // cannot be read as "the user gave up".
+  let unblock: (() => void) | null = null;
+  registerPreflightIpc(preflightCtx, {
+    onReport: (report) => {
+      if (!report.canProceed) return;
+      const resume = unblock;
+      unblock = null;
+      resume?.();
+    },
+  });
+
   const appConfig = new AppConfigStore(configPathFor(p.dataDir));
+
+  // Registered before the gate, not after. The prerequisites window is opened by the gate
+  // below, and a window whose every call answers "No handler registered" is precisely the
+  // silent failure this screen exists to replace. The getters return null until the server
+  // and the sidecar are up, and the handlers answer with a typed error the UI can show.
+  registerIpc({
+    edge: () => edge,
+    operator: () => {
+      if (!operatorClient) throw new Error('The local server has not started yet.');
+      return operatorClient;
+    },
+    appConfig,
+    version: app.getVersion(),
+    serverPort: () => serverHandle?.port ?? 0,
+    restartEdge: async (config: NetworkConfig): Promise<EdgeStatus> => {
+      if (!edge) throw new Error('network edge is not running');
+      return edge.applyConfig(config);
+    },
+  });
+
+  const preflight = await runPreflight(preflightCtx);
+  if (!preflight.canProceed) {
+    // Nothing below here can work, so nothing below here runs: no server, no sidecar, no tray.
+    // The wizard opens on its prerequisites step — it reads the same report over
+    // `preflight:run` — and bootstrap resumes only once a remedy has actually cleared the
+    // blocking items. A degrading item (no print helper) never reaches this branch.
+    await new Promise<void>((resume) => {
+      unblock = resume;
+      wizardWindow = createWizardWindow(p.preloadDir);
+      wizardWindow.once('closed', () => {
+        wizardWindow = null;
+        // Closed while something blocking is still outstanding: there is no tray and nothing
+        // running to come back to, so this means "give up", not "hide".
+        if (unblock) {
+          quitting = true;
+          app.quit();
+        }
+      });
+    });
+  }
+
   const edgeSecret = mintEdgeSecret();
 
   // The signing key must outlive the process: regenerating it would invalidate every device
@@ -153,6 +227,9 @@ async function bootstrap(): Promise<void> {
       jwtSecret: signingKey,
       webRoot: p.webRoot,
       version: app.getVersion(),
+      // Falls back to node_modules when the side copy has not been built; the prerequisites
+      // screen has already told the user which command produces it.
+      nativeBinding: existsSync(p.nativeBinding) ? p.nativeBinding : '',
     });
   } catch (err) {
     if (err instanceof ServerNotBuilt) {
@@ -163,7 +240,7 @@ async function bootstrap(): Promise<void> {
     throw err;
   }
 
-  const operator = new OperatorClient(serverHandle.port, edgeSecret);
+  operatorClient = new OperatorClient(serverHandle.port, edgeSecret);
 
   let binaryPath: string | undefined;
   try {
@@ -210,17 +287,7 @@ async function bootstrap(): Promise<void> {
   });
   tray.update(edge.status);
 
-  registerIpc({
-    edge,
-    operator: () => operator,
-    appConfig,
-    version: app.getVersion(),
-    serverPort: () => serverHandle?.port ?? 0,
-    restartEdge: async (config: NetworkConfig): Promise<EdgeStatus> => {
-      if (!edge) throw new Error('network edge is not running');
-      return edge.applyConfig(config);
-    },
-  });
+  broadcastEdgeStatus(edge);
 
   if (binaryPath) {
     // Failure to come up is a state the UI already knows how to show, so it is surfaced
@@ -231,11 +298,19 @@ async function bootstrap(): Promise<void> {
   }
 
   if (!appConfig.get().setupComplete) {
-    wizardWindow = createWizardWindow(p.preloadDir);
+    // `??=`: the prerequisites step may already have opened it, and the wizard carries on from
+    // there into its normal first-run steps rather than being replaced by a second window.
+    wizardWindow ??= createWizardWindow(p.preloadDir);
     wizardWindow.on('closed', () => {
       wizardWindow = null;
       if (appConfig.get().setupComplete) openPanel();
     });
+  } else if (wizardWindow) {
+    // Setup was already done; that window existed only to show the prerequisites, and they
+    // are satisfied now.
+    wizardWindow.close();
+    wizardWindow = null;
+    if (!appConfig.get().startMinimised) openPanel();
   } else if (!appConfig.get().startMinimised) {
     openPanel();
   }

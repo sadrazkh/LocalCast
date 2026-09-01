@@ -18,6 +18,11 @@ export interface ServerHostOptions {
   /** Directory holding the built PWA. Empty in development, where Vite serves it. */
   webRoot: string;
   version: string;
+  /**
+   * A better_sqlite3.node built for Electron's ABI. Empty falls back to the copy in
+   * node_modules, which npm builds for Node — the wrong shape for this runtime.
+   */
+  nativeBinding: string;
 }
 
 export interface ServerHandle {
@@ -74,6 +79,7 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
     jwtSecret: new Uint8Array(options.jwtSecret),
     webRoot: options.webRoot,
     version: options.version,
+    nativeBinding: options.nativeBinding,
     host: '127.0.0.1',
     // 0 asks the OS for a free port. Nothing outside this process needs to predict it —
     // netedge is told the number after the fact.

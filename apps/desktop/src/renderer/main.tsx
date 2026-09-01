@@ -31,7 +31,14 @@ function Root() {
     case 'tray':
       return <TrayApp />;
     case 'panel':
-      return <PanelApp section={route.section} />;
+      // Only the panel gets the library. The wizard runs before the server is necessarily up
+      // — the prerequisites gate opens it with nothing else started — and a provider fetching
+      // folders and devices there would fill the log with failures for data no step uses.
+      return (
+        <LibraryProvider>
+          <PanelApp section={route.section} />
+        </LibraryProvider>
+      );
   }
 }
 
@@ -43,9 +50,7 @@ createRoot(container).render(
     <LocaleProvider defaultLocale="fa">
       <FeedbackProvider>
         <ShellProvider>
-          <LibraryProvider>
-            <Root />
-          </LibraryProvider>
+          <Root />
         </ShellProvider>
       </FeedbackProvider>
     </LocaleProvider>

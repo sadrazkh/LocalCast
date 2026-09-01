@@ -122,6 +122,22 @@ export type InstallOutcome =
       message: string;
     };
 
+/**
+ * The bridge the preload script exposes as `window.localcast.preflight`.
+ *
+ * `install` takes the confirmed digest in an options object: it is the only optional this
+ * call will ever carry, and naming it at the call site is what stops a bare string being
+ * passed by accident on the one path where an unverified file would otherwise be installed.
+ */
+export interface PreflightBridge {
+  /** `force` skips the main process's cached report — what "check again" has to do. */
+  run(force?: boolean): Promise<PreflightReport>;
+  install(id: PrerequisiteId, options?: { confirmedSha256?: string }): Promise<InstallOutcome>;
+  onProgress(handler: (payload: PrerequisiteStatus | PreflightReport) => void): () => void;
+  openDoc(docPath: string): Promise<void>;
+  runCommand(id: PrerequisiteId, command: string): Promise<InstallOutcome>;
+}
+
 export const PREFLIGHT_IPC = {
   run: 'preflight:run',
   install: 'preflight:install',

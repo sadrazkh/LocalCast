@@ -1,0 +1,238 @@
+/* One prerequisite. Written with logical properties throughout, so `dir="rtl"` flips it
+   without a single per-direction override. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-4);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  text-align: start;
+  list-style: none;
+}
+
+/* A satisfied item is a line of reassurance, not a card competing with the ones that need
+   the user's attention. */
+.card[data-state='ok'] {
+  background: transparent;
+  border-color: var(--lc-border-subtle);
+  padding-block: var(--lc-space-3);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-3);
+}
+
+.iconOk,
+.iconWarn,
+.iconStop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--lc-radius-sm);
+  border: 1px solid var(--lc-border);
+}
+
+.iconOk {
+  background: var(--lc-success-bg);
+  border-color: var(--lc-success);
+  color: var(--lc-success);
+}
+
+.iconWarn {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-warning);
+  color: var(--lc-warning);
+}
+
+.iconStop {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-danger);
+  color: var(--lc-danger);
+}
+
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: var(--lc-fs-body);
+  font-weight: var(--lc-fw-medium);
+  line-height: var(--lc-lh-tight);
+  color: var(--lc-text-primary);
+}
+
+.severity {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-text-muted);
+}
+
+/* ── folded-away technical detail ─────────────────────────────────────────────── */
+
+.disclosure {
+  border-block-start: 1px solid var(--lc-border-subtle);
+  padding-block-start: var(--lc-space-3);
+}
+
+.summary {
+  cursor: pointer;
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-dim);
+}
+
+.summary:hover {
+  color: var(--lc-text-secondary);
+}
+
+.paths {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  margin: var(--lc-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mono {
+  display: block;
+  /* ASCII paths, commands and digests read left to right whatever the page direction is. */
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.hint {
+  margin: var(--lc-space-2) 0 0;
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-text-muted);
+}
+
+/* ── actions ──────────────────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lc-space-2) var(--lc-space-3);
+}
+
+.remedy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex-wrap: wrap;
+}
+
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex-wrap: wrap;
+}
+
+.sourceLabel {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.url {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* ── the command, shown before it runs ────────────────────────────────────────── */
+
+.command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-3);
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-sm);
+}
+
+.commandTitle {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-secondary);
+}
+
+.commandActions {
+  display: flex;
+  gap: var(--lc-space-2);
+}
+
+/* ── results ──────────────────────────────────────────────────────────────────── */
+
+.success,
+.failure,
+.hardFailure,
+.digest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-3);
+  border-radius: var(--lc-radius-sm);
+  border: 1px solid var(--lc-border);
+  background: var(--lc-bg-raised);
+}
+
+.success {
+  border-color: var(--lc-success);
+  background: var(--lc-success-bg);
+}
+
+.hardFailure {
+  border-color: var(--lc-danger);
+}
+
+/* Amber, not red: an unverifiable file is a decision waiting for the user, not a failure. */
+.digest {
+  border-color: var(--lc-warning);
+}
+
+.successText,
+.failureTitle {
+  margin: 0;
+  font-size: var(--lc-fs-sm);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-primary);
+}
+
+.failureBody {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-text-secondary);
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+}

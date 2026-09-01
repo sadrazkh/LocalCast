@@ -90,6 +90,11 @@ export type RedactedNetworkConfig = Omit<NetworkConfig, 'authKey' | 'dnsApiToken
 };
 
 export interface DesktopApi {
+  /**
+   * Prerequisites. Declared here rather than only in the renderer, because a screen that
+   * feature-detects its own backend forever is a screen nobody ever finishes wiring.
+   */
+  preflight: import('./preflight.js').PreflightBridge;
   edge: {
     status(): Promise<EdgeStatus>;
     onEvent(handler: (status: EdgeStatus) => void): () => void;

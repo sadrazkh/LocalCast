@@ -33,3 +33,6 @@ Thumbs.db
 # Build output of the workspaces
 apps/*/dist/
 packages/*/dist/
+
+# The Electron-ABI copy of better_sqlite3, produced by scripts/rebuild-native.mjs
+vendor/native/

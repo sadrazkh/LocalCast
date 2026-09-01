@@ -50,6 +50,11 @@ const IPC = {
   appInfo: 'app:info',
   wizardComplete: 'wizard:complete',
   openExternal: 'app:open-external',
+  preflightRun: 'preflight:run',
+  preflightInstall: 'preflight:install',
+  preflightProgress: 'preflight:progress',
+  preflightOpenDoc: 'preflight:open-doc',
+  preflightRunCommand: 'preflight:run-command',
 } as const;
 
 const api = {
@@ -94,6 +99,22 @@ const api = {
     list: () => ipcRenderer.invoke(IPC.printersList),
     refresh: () => ipcRenderer.invoke(IPC.printersRefresh),
     setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke(IPC.printerSetEnabled, id, enabled),
+  },
+  preflight: {
+    run: (force?: boolean) => ipcRenderer.invoke(IPC.preflightRun, force === true),
+    // The renderer passes the confirmed digest in an options object because that is the only
+    // optional it will ever have; the main process takes it positionally. Unwrapping here
+    // keeps both sides idiomatic and means neither has to know about the other's shape.
+    install: (id: string, options?: { confirmedSha256?: string }) =>
+      ipcRenderer.invoke(IPC.preflightInstall, id, options?.confirmedSha256),
+    onProgress: (handler: (payload: unknown) => void) => {
+      const listener = (_e: unknown, payload: unknown) => handler(payload);
+      ipcRenderer.on(IPC.preflightProgress, listener);
+      return () => ipcRenderer.removeListener(IPC.preflightProgress, listener);
+    },
+    openDoc: (docPath: string) => ipcRenderer.invoke(IPC.preflightOpenDoc, docPath),
+    runCommand: (id: string, command: string) =>
+      ipcRenderer.invoke(IPC.preflightRunCommand, id, command),
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),

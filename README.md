@@ -28,21 +28,35 @@ docs/
 
 ## Documents
 
+- [Prerequisites](docs/prerequisites.md) ([فارسی](docs/prerequisites.fa.md)) — what to
+  install before this runs, why, and how to check
 - [Design spec](docs/superpowers/specs/2026-09-01-localcast-design.md) — architecture, data
   model, API contract, and the constraints that shaped them
 - [Design tokens](docs/design-tokens.md) — palette, type, shape, direction
 - [Acceptance checklist](docs/acceptance-checklist.md) — the things only real hardware can
   prove
 
-## Development
+## Running it
 
 ```bash
-npm install
-npm run build
-npm test
+npm install     # also rebuilds better-sqlite3 for Electron's ABI — see below
+npm start       # builds everything, then launches the desktop app
 ```
 
-The Go sidecar builds separately:
+```bash
+npm run doctor  # what is missing, and the exact command that fixes each one
+npm run dev     # Vite for both renderers, plus Electron pointed at the desktop one
+npm run build && npm test
+```
+
+`npm install` compiles `better-sqlite3` against Node's ABI, and Electron embeds a different
+one; without a rebuild the app dies at its first database call with
+`NODE_MODULE_VERSION 127 ... requires 130`. The root `postinstall` handles it, `npm start`
+re-checks it, and `npm run rebuild:native` does it on demand — nobody should have to know
+this, which is why nothing here relies on you knowing it.
+
+The Go sidecar builds separately, and **without it there is no access from outside the local
+network at all**:
 
 ```bash
 npm run netedge:build
@@ -50,9 +64,12 @@ npm run netedge:build
 
 ## Requirements
 
-- Node 22+
-- npm 10+
-- Go 1.23+ (only to build `netedge`)
+Full detail, in English and Persian: [`docs/prerequisites.md`](docs/prerequisites.md) /
+[`docs/prerequisites.fa.md`](docs/prerequisites.fa.md).
+
+- Node 22+ and npm 10+
+- Go 1.23+ — only to build `netedge`, but nothing reaches this machine from outside without it
+- `SumatraPDF.exe` in `vendor/bin` — printing only; see [`vendor/README.md`](vendor/README.md)
 - Windows 10/11 for the server and printing; clients run anywhere
 
 ## State of the build

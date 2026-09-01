@@ -18,10 +18,23 @@ files:
 extraResources:
   # The Go sidecar. It is a plain executable launched as a child process — no service, no
   # driver, and therefore no elevation prompt during install.
-  - from: ../../native/netedge/netedge.exe
-    to: netedge.exe
+  #
+  # `from` points at the source *directory*, which is tracked and therefore always present,
+  # and the executable is selected with a filter. Pointing `from` straight at netedge.exe
+  # would make the source path itself vanish whenever the sidecar has not been built — and it
+  # is never committed — which electron-builder reports only as a "file source doesn't exist"
+  # warning before happily producing an installer with no remote access in it. A filter that
+  # matches nothing copies nothing and says so through scripts/prepack.mjs instead.
+  - from: ../../native/netedge
+    to: .
+    filter: ['netedge.exe']
   # SumatraPDF does the actual printing. Bundled so printing does not depend on whatever
   # PDF reader the user happens to have.
+  #
+  # It has to land directly in resources/vendor, because that is the vendorDir the server
+  # joins SumatraPDF.exe onto — so this one cannot use the directory-plus-filter trick above
+  # without changing the layout. `vendor/bin` is instead guaranteed to exist by
+  # scripts/prepack.mjs, which the package script runs first; empty, it copies nothing.
   - from: ../../vendor/bin
     to: vendor
     filter: ['**/*']

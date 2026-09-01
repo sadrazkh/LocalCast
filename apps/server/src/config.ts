@@ -42,6 +42,11 @@ export interface ServerConfig {
    * its data. Empty disables it, which is how tests and a dev server run.
    */
   webRoot: string;
+  /**
+   * A `better_sqlite3.node` built for the host runtime, when it is not the one in
+   * node_modules. Electron sets this; tests and the CLI leave it empty.
+   */
+  nativeBinding: string;
   logLevel: LogLevel;
 }
 
@@ -83,6 +88,7 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     refreshTokenTtlMs: overrides.refreshTokenTtlMs ?? 180 * DAY_MS,
     indexOnStart: overrides.indexOnStart ?? true,
     webRoot: overrides.webRoot ?? '',
+    nativeBinding: overrides.nativeBinding ?? '',
     logLevel: overrides.logLevel ?? 'info',
   };
 }

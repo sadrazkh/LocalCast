@@ -11,15 +11,22 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "start": "npm run rebuild:native && npm run build && npm start -w @localcast/desktop",
+    "dev": "node scripts/dev.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "build": "npm run build -w @localcast/contract && npm run build -w @localcast/client-core && npm run build -w @localcast/server && npm run build -w @localcast/pwa && npm run build -w @localcast/desktop && npm run build -w @localcast/desktop-client",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test:run --workspaces --if-present",
     "icons": "node scripts/generate-icons.mjs",
+    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "postinstall": "node scripts/postinstall.mjs",
     "netedge:build": "cd native/netedge && go build -o netedge.exe ./cmd/netedge",
     "netedge:test": "cd native/netedge && go test ./...",
-    "//build": "Explicit order, not --workspaces: contract and client-core publish compiled dist, and npm runs workspaces alphabetically, so client-core would build against a contract that does not exist yet. ui-kit is absent because it publishes from source."
+    "//build": "Explicit order, not --workspaces: contract and client-core publish compiled dist, and npm runs workspaces alphabetically, so client-core would build against a contract that does not exist yet. ui-kit is absent because it publishes from source.",
+    "//start": "rebuild:native comes first and is a no-op when the binding already matches Electron's ABI. It is cheap insurance: without it the app dies at its first database call with NODE_MODULE_VERSION, which reads like a code bug and is not one. See docs/prerequisites.md."
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@types/node": "^22.10.0",
     "prettier": "^3.4.0",
     "typescript": "^5.7.0",

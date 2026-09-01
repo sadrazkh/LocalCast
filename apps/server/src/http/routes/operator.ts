@@ -9,6 +9,7 @@ import {
   addFolderRequestSchema,
   folderKindSchema,
   mintPairingRequestSchema,
+  pairClaimRequestSchema,
   setPermissionsRequestSchema,
   type DeviceSummary,
   type FolderPermission,
@@ -22,6 +23,8 @@ import type { Indexer } from '../../library/indexer.js';
 import { stripLongPathPrefix, withLongPathPrefix, type FolderRow } from '../../library/resolver.js';
 import type { ServerContext } from '../../kernel.js';
 import { wrap } from '../errors.js';
+import { createNetworkConfigRouter } from './operatorNetwork.js';
+import { createOperatorPrinterRouter } from './operatorPrinters.js';
 
 /**
  * The operator API. Adding folders, approving devices and editing the permission matrix are
@@ -54,6 +57,24 @@ const setModeSchema = z.object({
   mode: accessModeSchema,
 });
 
+// The same bound the device sends its name under at pairing time, taken from the contract so
+// the panel cannot store a name the pairing path would have refused.
+const renameDeviceSchema = z.object({ name: pairClaimRequestSchema.shape.deviceName });
+
+interface DeviceRow {
+  id: string;
+  name: string;
+  platform: string;
+  status: 'pending' | 'active' | 'revoked';
+  last_seen_at: number | null;
+  pairing_code: string | null;
+}
+
+/** One place the summary is read from, so a single device and the list cannot drift apart. */
+const DEVICE_SUMMARY_SQL = `SELECT d.*, (SELECT p.code FROM pairing_tokens p WHERE p.consumed_by_device = d.id)
+                                   AS pairing_code
+                              FROM devices d`;
+
 const activityQuerySchema = z.object({
   limit: z.number().int().min(1).max(500).default(100),
   before: z.number().int().positive().optional(),
@@ -65,6 +86,11 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
   const { db } = ctx;
 
   router.use(loopbackOnly());
+
+  // Both sub-routers are mounted *after* the loopback check, so they inherit it — and the
+  // edge secret the app installs above this whole router — without restating either.
+  router.use(createNetworkConfigRouter(ctx));
+  router.use(createOperatorPrinterRouter(ctx));
 
   // ── folders ────────────────────────────────────────────────────────────────
 
@@ -164,6 +190,15 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
   );
 
   router.post(
+    '/folders/reindex',
+    wrap(async (_req, res) => {
+      // Awaited, like the per-folder pass: the panel's "rebuild the index" button should go
+      // back to idle when the work is actually finished, not when it was accepted.
+      res.json({ results: await indexer.indexAll() });
+    }),
+  );
+
+  router.post(
     '/folders/:id/reindex',
     wrap(async (req, res) => {
       const id = req.params['id'] as string;
@@ -179,31 +214,9 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
     '/devices',
     wrap((_req, res) => {
       const rows = db
-        .prepare(
-          `SELECT d.*, (SELECT p.code FROM pairing_tokens p WHERE p.consumed_by_device = d.id)
-                        AS pairing_code
-             FROM devices d
-            ORDER BY d.created_at DESC`,
-        )
-        .all() as Array<{
-        id: string;
-        name: string;
-        platform: string;
-        status: 'pending' | 'active' | 'revoked';
-        last_seen_at: number | null;
-        pairing_code: string | null;
-      }>;
-
-      const summaries: DeviceSummary[] = rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        platform: r.platform as DeviceSummary['platform'],
-        status: r.status,
-        lastSeenAt: r.last_seen_at,
-        pairingCode: r.pairing_code,
-        permissions: permissionsFor(r.id),
-      }));
-      res.json({ devices: summaries });
+        .prepare(`${DEVICE_SUMMARY_SQL} ORDER BY d.created_at DESC`)
+        .all() as DeviceRow[];
+      res.json({ devices: rows.map(summaryOf) });
     }),
   );
 
@@ -234,6 +247,22 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
       ctx.activity.record('device.revoked', id, { name: device.name });
       ctx.events.publish({ type: 'device', deviceId: id, status: 'revoked' });
       res.status(204).end();
+    }),
+  );
+
+  router.patch(
+    '/devices/:id',
+    wrap((req, res) => {
+      const body = renameDeviceSchema.parse(req.body);
+      const id = req.params['id'] as string;
+      const device = tokens.getDevice(id);
+      if (!device) throw new ApiException(ErrorCode.NOT_FOUND, 'Device not found');
+
+      db.prepare('UPDATE devices SET name = ? WHERE id = ?').run(body.name, id);
+      ctx.activity.record('device.renamed', id, { from: device.name, to: body.name });
+      // The whole summary, not just the name: the panel replaces its row with what comes
+      // back, and a half-row would blank the status and the permission cells next to it.
+      res.json(deviceSummary(id));
     }),
   );
 
@@ -275,16 +304,24 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
     }),
   );
 
-  router.put(
-    '/devices/:id/permissions',
-    wrap((req, res) => {
-      const id = req.params['id'] as string;
-      if (!tokens.getDevice(id)) throw new ApiException(ErrorCode.NOT_FOUND, 'Device not found');
-      const body = z.object({ permissions: z.array(setModeSchema) }).parse(req.body);
-      applyPermissions(id, body.permissions);
-      res.json({ permissions: permissionsFor(id) });
-    }),
-  );
+  /**
+   * PUT and POST are the same operation: the set is replaced wholesale either way. Both are
+   * served because the panel sends POST and this router already documented PUT; refusing one
+   * of them would only produce a 404 the operator cannot act on.
+   *
+   * A `deviceId` in the body is ignored — the path is the authority, so a stale body from a
+   * screen that has since moved on cannot rewrite a different device's grants.
+   */
+  const setDevicePermissions = wrap((req, res) => {
+    const id = req.params['id'] as string;
+    if (!tokens.getDevice(id)) throw new ApiException(ErrorCode.NOT_FOUND, 'Device not found');
+    const body = z.object({ permissions: z.array(setModeSchema) }).parse(req.body);
+    applyPermissions(id, body.permissions);
+    res.json(deviceSummary(id));
+  });
+
+  router.put('/devices/:id/permissions', setDevicePermissions);
+  router.post('/devices/:id/permissions', setDevicePermissions);
 
   // ── pairing ────────────────────────────────────────────────────────────────
 
@@ -312,6 +349,24 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
       res.json({ entries: activity.list(query.limit, query.before) });
     }),
   );
+
+  function summaryOf(row: DeviceRow): DeviceSummary {
+    return {
+      id: row.id,
+      name: row.name,
+      platform: row.platform as DeviceSummary['platform'],
+      status: row.status,
+      lastSeenAt: row.last_seen_at,
+      pairingCode: row.pairing_code,
+      permissions: permissionsFor(row.id),
+    };
+  }
+
+  function deviceSummary(id: string): DeviceSummary {
+    const row = db.prepare(`${DEVICE_SUMMARY_SQL} WHERE d.id = ?`).get(id) as DeviceRow | undefined;
+    if (!row) throw new ApiException(ErrorCode.NOT_FOUND, 'Device not found');
+    return summaryOf(row);
+  }
 
   function permissionsFor(deviceId: string): FolderPermission[] {
     return db
