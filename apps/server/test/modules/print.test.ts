@@ -1,0 +1,586 @@
+import { readdir, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrintJobStatus } from '@localcast/contract';
+import { createPrintModule } from '../../src/modules/print/index.js';
+import type { ExecFileFn, ExecOptions } from '../../src/modules/print/exec.js';
+import { POWERSHELL, powershellArgs } from '../../src/modules/print/exec.js';
+import {
+  GET_PRINTERS_SCRIPT,
+  parsePowerShellJson,
+  parsePrinters,
+  syncPrinters,
+} from '../../src/modules/print/enumerate.js';
+import {
+  buildPrintSettings,
+  buildSumatraArgs,
+  classifyJobStatus,
+} from '../../src/modules/print/spooler.js';
+import { assertPrintable } from '../../src/modules/print/routes.js';
+import type { ServerModule } from '../../src/kernel.js';
+import type { Harness, TestServer } from './support/context.js';
+import { createHarness } from './support/context.js';
+
+// ── the fake Windows boundary ────────────────────────────────────────────────
+
+interface ExecCall {
+  file: string;
+  args: string[];
+  script: string | null;
+  env: NodeJS.ProcessEnv | undefined;
+}
+
+interface SpoolerJobJson {
+  Id: number;
+  DocumentName?: string;
+  JobStatus: string;
+}
+
+interface FakeOptions {
+  printersJson?: string;
+  printersFails?: boolean;
+  /** One entry per `Get-PrintJob`; the last is repeated once the list runs out. */
+  spooler?: SpoolerJobJson[][];
+  onSubmit?: () => Promise<void> | void;
+  submitFails?: boolean;
+}
+
+function createFakeExec(options: FakeOptions = {}): { exec: ExecFileFn; calls: ExecCall[] } {
+  const calls: ExecCall[] = [];
+  const spooler = [...(options.spooler ?? [[]])];
+
+  const exec: ExecFileFn = async (file, args, execOptions: ExecOptions = {}) => {
+    const list = [...args];
+    const script = file === POWERSHELL ? (list[list.length - 1] ?? null) : null;
+    calls.push({ file, args: list, script, env: execOptions.env });
+
+    if (script?.includes('Remove-PrintJob')) return { stdout: '', stderr: '' };
+
+    if (script?.includes('Get-PrintJob')) {
+      const next = spooler.length > 1 ? spooler.shift() : spooler[0];
+      return { stdout: JSON.stringify(next ?? []), stderr: '' };
+    }
+
+    if (script?.includes('Get-Printer ')) {
+      if (options.printersFails) throw new Error('Get-Printer is not recognized');
+      return { stdout: options.printersJson ?? '[]', stderr: '' };
+    }
+
+    // Anything else is SumatraPDF.
+    await options.onSubmit?.();
+    if (options.submitFails) throw new Error('SumatraPDF exited with 1');
+    return { stdout: '', stderr: '' };
+  };
+
+  return { exec, calls };
+}
+
+// ── unit level ───────────────────────────────────────────────────────────────
+
+describe('PowerShell JSON parsing', () => {
+  it('accepts a bare object, because that is what one printer produces', () => {
+    // `ConvertTo-Json` only emits an array when the pipeline had more than one item, so a
+    // machine with a single printer is the case a naive parser reports as "no printers".
+    const single = parsePrinters(
+      JSON.stringify({ Name: 'Office Laser', Driver: 'HP', Status: 'Normal', Online: true }),
+    );
+    expect(single).toHaveLength(1);
+    expect(single[0]?.name).toBe('Office Laser');
+  });
+
+  it('accepts an array', () => {
+    const many = parsePrinters(
+      JSON.stringify([
+        { Name: 'A', IsDefault: true, Color: true, Duplex: false, Status: 'Normal', Online: true },
+        { Name: 'B', IsDefault: false, Status: 'Offline', Online: false },
+      ]),
+    );
+    expect(many.map((p) => p.name)).toEqual(['A', 'B']);
+    expect(many[0]?.isDefault).toBe(true);
+    expect(many[1]?.online).toBe(false);
+  });
+
+  it('treats empty output and a JSON null as no printers', () => {
+    expect(parsePowerShellJson('')).toEqual([]);
+    expect(parsePowerShellJson('   ')).toEqual([]);
+    expect(parsePowerShellJson('null')).toEqual([]);
+  });
+
+  it('drops a row with no usable name rather than writing it', () => {
+    expect(parsePrinters(JSON.stringify([{ Name: '' }, { Driver: 'x' }, { Name: 'Good' }]))).toEqual(
+      [expect.objectContaining({ name: 'Good' })],
+    );
+  });
+
+  it('asks PowerShell for JSON with the flags that make output predictable', () => {
+    const args = powershellArgs(GET_PRINTERS_SCRIPT);
+    expect(args.slice(0, 5)).toEqual([
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+    ]);
+    expect(args[5]).toContain('Get-Printer');
+    expect(args[5]).toContain('ConvertTo-Json');
+    expect(args[5]).toContain('OutputEncoding');
+  });
+});
+
+describe('print settings', () => {
+  it('maps the request onto SumatraPDF switches', () => {
+    expect(buildPrintSettings({ copies: 1, color: 'mono', duplex: 'simplex' })).toBe(
+      'monochrome,simplex',
+    );
+    expect(buildPrintSettings({ copies: 3, color: 'color', duplex: 'long' })).toBe(
+      'color,duplexlong,3x',
+    );
+    expect(
+      buildPrintSettings({ copies: 1, color: 'mono', duplex: 'short', pageRange: '1-4, 7' }),
+    ).toBe('1-4,7,monochrome,duplexshort');
+  });
+
+  it('refuses a page range it cannot vouch for', () => {
+    // A malformed range makes SumatraPDF print the whole document, which on 400 pages is an
+    // expensive way to discover the mistake.
+    expect(() => buildPrintSettings({ copies: 1, color: 'mono', duplex: 'simplex', pageRange: 'all' })).toThrow(
+      /Page range/,
+    );
+    expect(() =>
+      buildPrintSettings({ copies: 1, color: 'mono', duplex: 'simplex', pageRange: '1;2' }),
+    ).toThrow();
+  });
+
+  it('builds an argument array, never a command line', () => {
+    const args = buildSumatraArgs({
+      sumatraPath: 'C:/vendor/SumatraPDF.exe',
+      printerName: 'HP "Big" & Loud',
+      settings: 'color,simplex',
+      filePath: 'C:/temp/a b.pdf',
+    });
+    expect(args).toEqual([
+      '-print-to',
+      'HP "Big" & Loud',
+      '-print-settings',
+      'color,simplex',
+      '-silent',
+      '-exit-when-done',
+      'C:/temp/a b.pdf',
+    ]);
+  });
+});
+
+describe('spooler status', () => {
+  it('reads the flag list Windows actually returns', () => {
+    expect(classifyJobStatus('Printing')).toBe('printing');
+    expect(classifyJobStatus('Spooling, Retained')).toBe('printing');
+    expect(classifyJobStatus('Error, Offline')).toBe('error');
+    expect(classifyJobStatus('PaperOut')).toBe('error');
+    expect(classifyJobStatus('Deleting')).toBe('cancelled');
+    expect(classifyJobStatus('Printed')).toBe('done');
+  });
+});
+
+describe('printable types', () => {
+  it.each(['a.pdf', 'b.PDF', 'c.jpg', 'd.png', 'e.tiff'])('accepts %s', (name) => {
+    expect(() => assertPrintable(name)).not.toThrow();
+  });
+
+  it('rejects .docx with a message that says what to do instead', () => {
+    expect(() => assertPrintable('report.docx')).toThrow(/Export the file to PDF/);
+  });
+
+  it.each(['x.xlsx', 'y.pptx', 'z.rtf', 'w.odt'])('rejects %s as an Office format', (name) => {
+    expect(() => assertPrintable(name)).toThrow(/Office documents/);
+  });
+
+  it('rejects a type nobody could print', () => {
+    expect(() => assertPrintable('movie.mkv')).toThrow(/Only PDF and image/);
+  });
+});
+
+// ── over HTTP, with a real database ──────────────────────────────────────────
+
+let harness: Harness;
+let server: TestServer;
+let modul: ServerModule;
+let deviceId: string;
+let folderId: string;
+let printerId: string;
+let printerName: string;
+let pdfId: string;
+
+async function boot(options: FakeOptions & { withBinary?: boolean } = {}): Promise<ExecCall[]> {
+  const { exec, calls } = createFakeExec(options);
+  if (options.withBinary !== false) {
+    await writeFile(`${harness.ctx.paths.vendorDir}/SumatraPDF.exe`, 'not really a binary');
+  }
+  modul = createPrintModule({ exec, pollIntervalMs: 0, discoverAttempts: 3, cacheTtlMs: 60_000 });
+  server = await harness.serve([modul]);
+  return calls;
+}
+
+function api(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${server.url}/api/v1${path}`, {
+    ...init,
+    headers: { 'x-test-device': deviceId, ...(init.headers ?? {}) },
+  });
+}
+
+function printJson(body: unknown): Promise<Response> {
+  return api('/print', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function statusOf(jobId: string): PrintJobStatus {
+  const row = harness.ctx.db.prepare(`SELECT status FROM print_jobs WHERE id = ?`).get(jobId) as
+    | { status: PrintJobStatus }
+    | undefined;
+  if (!row) throw new Error(`no job ${jobId}`);
+  return row.status;
+}
+
+function errorOf(jobId: string): string | null {
+  const row = harness.ctx.db
+    .prepare(`SELECT error_message FROM print_jobs WHERE id = ?`)
+    .get(jobId) as { error_message: string | null } | undefined;
+  return row?.error_message ?? null;
+}
+
+async function settle(jobId: string, expected: PrintJobStatus): Promise<void> {
+  await vi.waitFor(() => expect(statusOf(jobId)).toBe(expected), { timeout: 4000, interval: 5 });
+}
+
+beforeEach(async () => {
+  harness = await createHarness();
+  await writeFile(`${harness.ctx.paths.vendorDir}/.keep`, '').catch(() => undefined);
+  deviceId = harness.addDevice().id;
+  folderId = harness.addFolder({ label: 'Docs', kind: 'documents' }).id;
+  harness.grant(deviceId, folderId, 'full');
+  pdfId = await harness.putFile(folderId, 'invoice.pdf', Buffer.from('%PDF-1.7 fake'));
+  const printer = harness.addPrinter({ name: 'Office Laser' });
+  printerId = printer.id;
+  printerName = printer.name;
+});
+
+afterEach(async () => {
+  await modul?.dispose?.();
+  await harness.cleanup();
+});
+
+describe('GET /printers', () => {
+  it('lists only the printers the operator left enabled', async () => {
+    harness.addPrinter({ name: 'Hidden Plotter', enabled: false });
+    await boot();
+    const body = (await (await api('/printers')).json()) as { printers: { name: string }[] };
+    expect(body.printers.map((p) => p.name)).toEqual(['Office Laser']);
+  });
+
+  it('re-enumerates when the cache is stale and keeps the hide flag across the refresh', async () => {
+    harness.ctx.db
+      .prepare(`UPDATE printers SET enabled = 0, last_seen_at = 0 WHERE id = ?`)
+      .run(printerId);
+
+    await boot({
+      printersJson: JSON.stringify({
+        Name: 'Office Laser',
+        Driver: 'HP Universal',
+        Status: 'Normal',
+        IsDefault: true,
+        Color: true,
+        Duplex: true,
+        Online: true,
+      }),
+    });
+
+    const body = (await (await api('/printers')).json()) as { printers: unknown[] };
+    // The refresh ran and updated the driver…
+    const row = harness.ctx.db.prepare(`SELECT * FROM printers WHERE id = ?`).get(printerId) as {
+      driver: string;
+      enabled: number;
+    };
+    expect(row.driver).toBe('HP Universal');
+    // …but did not undo the operator hiding it.
+    expect(row.enabled).toBe(0);
+    expect(body.printers).toHaveLength(0);
+  });
+
+  it('keeps the last known list when PowerShell fails', async () => {
+    harness.ctx.db.prepare(`UPDATE printers SET last_seen_at = 0`).run();
+    await boot({ printersFails: true });
+    const body = (await (await api('/printers')).json()) as { printers: unknown[] };
+    expect(body.printers).toHaveLength(1);
+    expect(harness.logs.some((entry) => entry.msg.includes('enumeration failed'))).toBe(true);
+  });
+
+  it('marks a printer that vanished from Windows offline instead of deleting it', () => {
+    syncPrinters(harness.ctx.db, [{ name: 'Only Me', driver: null, status: 'Normal', isDefault: false, color: false, duplex: false, online: true }], 5_000);
+    const rows = harness.ctx.db
+      .prepare(`SELECT name, online FROM printers ORDER BY name`)
+      .all() as { name: string; online: number }[];
+    expect(rows).toEqual([
+      { name: 'Office Laser', online: 0 },
+      { name: 'Only Me', online: 1 },
+    ]);
+  });
+});
+
+describe('POST /print', () => {
+  it('runs a job all the way to done, and done means the spooler said so', async () => {
+    const calls = await boot({
+      spooler: [
+        [], // before submitting
+        [{ Id: 42, JobStatus: 'Spooling' }], // discovery
+        [{ Id: 42, JobStatus: 'Printing' }], // still going
+        [], // gone from the queue → done
+      ],
+    });
+
+    const res = await printJson({ printerId, source: { kind: 'library', fileId: pdfId }, copies: 2 });
+    expect(res.status).toBe(202);
+    const { job } = (await res.json()) as { job: { id: string; status: string } };
+    expect(job.status).toBe('queued');
+
+    await settle(job.id, 'done');
+
+    const row = harness.ctx.db.prepare(`SELECT * FROM print_jobs WHERE id = ?`).get(job.id) as {
+      windows_job_id: number;
+      started_at: number;
+      finished_at: number;
+    };
+    expect(row.windows_job_id).toBe(42);
+    expect(row.started_at).toBeGreaterThan(0);
+    expect(row.finished_at).toBeGreaterThan(0);
+
+    // The exit code of the helper was never the thing that decided it.
+    const submit = calls.find((call) => call.file.endsWith('SumatraPDF.exe'));
+    expect(submit?.args).toContain('-silent');
+    expect(submit?.args).toContain('monochrome,simplex,2x');
+  });
+
+  it('publishes an event on every transition', async () => {
+    await boot({ spooler: [[], [{ Id: 7, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+
+    const statuses = harness.events
+      .filter((event) => event.type === 'print-job')
+      .map((event) => (event as { job: { status: string } }).job.status);
+    expect(statuses).toEqual(['queued', 'printing', 'done']);
+  });
+
+  it('copies the source into the temp directory and removes the copy afterwards', async () => {
+    await boot({
+      spooler: [[], [{ Id: 3, JobStatus: 'Printing' }], []],
+      onSubmit: async () => {
+        const spooled = (await readdir(harness.ctx.paths.tempDir)).filter((name) =>
+          name.startsWith('print-'),
+        );
+        expect(spooled).toHaveLength(1);
+        expect(spooled[0]).toMatch(/\.pdf$/);
+      },
+    });
+
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+
+    const left = (await readdir(harness.ctx.paths.tempDir)).filter((name) =>
+      name.startsWith('print-'),
+    );
+    expect(left).toEqual([]);
+  });
+
+  it('passes the printer name through the environment, never inside the script', async () => {
+    harness.ctx.db
+      .prepare(`UPDATE printers SET name = ? WHERE id = ?`)
+      .run("Evil'; Remove-Item C:\\ -Recurse #", printerId);
+
+    const calls = await boot({ spooler: [[], [{ Id: 1, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+
+    const jobQueries = calls.filter((call) => call.script?.includes('Get-PrintJob'));
+    expect(jobQueries.length).toBeGreaterThan(0);
+    for (const call of jobQueries) {
+      expect(call.script).not.toContain('Remove-Item');
+      expect(call.env?.['LC_PRINTER']).toBe("Evil'; Remove-Item C:\\ -Recurse #");
+    }
+  });
+
+  it('rejects a .docx with UNPRINTABLE_TYPE rather than half-printing it', async () => {
+    const docxId = await harness.putFile(folderId, 'contract.docx', 'PK fake');
+    await boot();
+    const res = await printJson({ printerId, source: { kind: 'library', fileId: docxId } });
+    expect(res.status).toBe(415);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('unprintable_type');
+    expect(body.error.message).toMatch(/Export the file to PDF/);
+    // Nothing was queued.
+    expect(harness.ctx.db.prepare(`SELECT COUNT(*) AS n FROM print_jobs`).get()).toEqual({ n: 0 });
+  });
+
+  it('fails the job with a message naming the missing helper', async () => {
+    await boot({ withBinary: false });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    await settle(job.id, 'error');
+    expect(errorOf(job.id)).toMatch(/SumatraPDF\.exe.*missing/);
+    // The important half: it did not report success.
+    expect(statusOf(job.id)).not.toBe('done');
+  });
+
+  it('reports the spooler message when the printer errors', async () => {
+    await boot({ spooler: [[], [{ Id: 9, JobStatus: 'Error, PaperOut' }]] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'error');
+    expect(errorOf(job.id)).toContain('Error, PaperOut');
+  });
+
+  it('404s an unknown printer and 403s a hidden one', async () => {
+    const hidden = harness.addPrinter({ name: 'Hidden', enabled: false });
+    await boot();
+    expect((await printJson({ printerId: 'nope', source: { kind: 'library', fileId: pdfId } })).status).toBe(404);
+    expect(
+      (await printJson({ printerId: hidden.id, source: { kind: 'library', fileId: pdfId } })).status,
+    ).toBe(403);
+  });
+
+  it('refuses to print from a `stream` folder', async () => {
+    harness.grant(deviceId, folderId, 'stream');
+    await boot();
+    const res = await printJson({ printerId, source: { kind: 'library', fileId: pdfId } });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('print_not_allowed');
+  });
+
+  it('404s a file in a folder the device cannot see', async () => {
+    const closed = harness.addFolder({ label: 'Private' });
+    harness.grant(deviceId, closed.id, 'none');
+    const secretId = await harness.putFile(closed.id, 'secret.pdf', 'x');
+    await boot();
+    expect((await printJson({ printerId, source: { kind: 'library', fileId: secretId } })).status).toBe(404);
+  });
+
+  it('rejects a body the contract does not accept', async () => {
+    await boot();
+    const res = await printJson({ printerId, source: { kind: 'library' }, copies: 500 });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('bad_request');
+  });
+});
+
+describe('the queue', () => {
+  it('runs one job at a time per printer and cancels a queued one outright', async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+
+    await boot({
+      spooler: [[], [{ Id: 11, JobStatus: 'Printing' }], []],
+      onSubmit: () => held,
+    });
+
+    const first = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    const second = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+
+    // The first has reached the printer; the second is still waiting behind it.
+    await vi.waitFor(() => expect(statusOf(first.job.id)).toBe('printing'), { interval: 5 });
+    expect(statusOf(second.job.id)).toBe('queued');
+
+    const cancelled = await api(`/print/jobs/${second.job.id}/cancel`, { method: 'POST' });
+    expect(cancelled.status).toBe(200);
+    expect(statusOf(second.job.id)).toBe('cancelled');
+
+    release();
+    await settle(first.job.id, 'done');
+    // The cancelled job never went near the spooler.
+    expect(statusOf(second.job.id)).toBe('cancelled');
+    expect(
+      harness.ctx.db.prepare(`SELECT windows_job_id FROM print_jobs WHERE id = ?`).get(second.job.id),
+    ).toEqual({ windows_job_id: null });
+  });
+
+  it('asks the spooler to drop a job that is already printing', async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+
+    const calls = await boot({
+      spooler: [[], [{ Id: 21, JobStatus: 'Printing' }], [{ Id: 21, JobStatus: 'Printing' }]],
+      onSubmit: () => held,
+    });
+
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await vi.waitFor(() => expect(statusOf(job.id)).toBe('printing'), { interval: 5 });
+
+    await api(`/print/jobs/${job.id}/cancel`, { method: 'POST' });
+    release();
+
+    await settle(job.id, 'cancelled');
+    expect(calls.some((call) => call.script?.includes('Remove-PrintJob'))).toBe(true);
+    expect(calls.find((call) => call.script?.includes('Remove-PrintJob'))?.env?.['LC_JOB_ID']).toBe('21');
+  });
+
+  it('refuses to cancel a job that has already finished', async () => {
+    await boot({ spooler: [[], [{ Id: 5, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+    expect((await api(`/print/jobs/${job.id}/cancel`, { method: 'POST' })).status).toBe(400);
+  });
+
+  it('hides another device`s jobs behind a 404', async () => {
+    await boot({ spooler: [[], [{ Id: 6, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+
+    const other = harness.addDevice({ name: 'Laptop' });
+    const res = await fetch(`${server.url}/api/v1/print/jobs/${job.id}`, {
+      headers: { 'x-test-device': other.id },
+    });
+    expect(res.status).toBe(404);
+    expect((await (await api('/print/jobs')).json()) as unknown).toMatchObject({
+      jobs: [{ id: job.id, status: 'done', printerName }],
+    });
+  });
+
+  it('closes out jobs stranded by a restart instead of leaving them spinning', async () => {
+    await boot({ spooler: [[], [{ Id: 8, JobStatus: 'Printing' }], []] });
+    const { job } = (await (
+      await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
+    ).json()) as { job: { id: string } };
+    await settle(job.id, 'done');
+
+    // Simulate a job the previous process left behind.
+    harness.ctx.db.prepare(`UPDATE print_jobs SET status = 'printing' WHERE id = ?`).run(job.id);
+    const second = createPrintModule({ exec: createFakeExec().exec, pollIntervalMs: 0 });
+    await harness.serve([second]);
+
+    expect(statusOf(job.id)).toBe('error');
+    expect(errorOf(job.id)).toMatch(/restarted/);
+    await second.dispose?.();
+  });
+});
