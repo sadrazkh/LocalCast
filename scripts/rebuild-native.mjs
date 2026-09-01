@@ -96,12 +96,8 @@ export function nativeStatus() {
 }
 
 /** The `@electron/rebuild` CLI entry, read from its manifest so no path is hard-coded. */
-function rebuildCli() {
-  // The shim npm generated, not the package's entry file. @electron/rebuild 3.7 ships a CLI
-  // that does not survive being handed straight to `node` — invoking it that way exits -1
-  // with no diagnostic, while the shim runs it exactly as `npx` would.
-  const shim = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-rebuild.cmd' : 'electron-rebuild');
-  return existsSync(shim) ? shim : null;
+function rebuildInstalled() {
+  return existsSync(join(ROOT, 'node_modules', '@electron', 'rebuild', 'package.json'));
 }
 
 /**
@@ -110,7 +106,7 @@ function rebuildCli() {
  * Returns 'skipped' (nothing to do here), 'ok' (already correct) or 'rebuilt'. Throws with an
  * actionable message when the rebuild itself fails.
  */
-export function ensureNativeModules({ force = false, quiet = false } = {}) {
+export async function ensureNativeModules({ force = false, quiet = false } = {}) {
   const say = (line) => {
     if (!quiet) console.log(line);
   };
@@ -139,8 +135,7 @@ export function ensureNativeModules({ force = false, quiet = false } = {}) {
     return 'ok';
   }
 
-  const cli = rebuildCli();
-  if (!cli) {
+  if (!rebuildInstalled()) {
     throw new Error(
       '@electron/rebuild is not installed. Run `npm install` first; if that does not fix it, ' +
         'the root devDependency is missing from package.json.',
@@ -150,22 +145,31 @@ export function ensureNativeModules({ force = false, quiet = false } = {}) {
   const names = NATIVE_MODULES.join(',');
   say(`rebuild:native  rebuilding ${names} against Electron ${electron}…`);
 
-  // Same invocation as the one verified by hand, with the version read rather than typed.
-  // `-f` because @electron/rebuild otherwise trusts its own cache marker, which survives the
-  // exact situation this script exists for.
-  const result = spawnSync(cli, ['-f', '-w', names, '-v', electron], {
-    cwd: ROOT,
-    stdio: quiet ? 'pipe' : 'inherit',
-    // The Windows shim is a .cmd; Node refuses to spawn one without a shell.
-    shell: process.platform === 'win32',
-  });
-
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
+  // The library, not the CLI.
+  //
+  // Spawning the CLI is what this used to do and it kept failing with exit -1 and no
+  // diagnostic — the same command run by hand in the same directory succeeded, so the fault
+  // was in the spawn, not the tool. Calling the exported `rebuild` removes the shell, the
+  // .cmd shim and the argument quoting from the picture entirely, and any failure now
+  // arrives as an exception with a message attached.
+  //
+  // `force` because @electron/rebuild otherwise trusts its own cache marker, which survives
+  // the exact situation this script exists for.
+  try {
+    const { rebuild } = await import('@electron/rebuild');
+    await rebuild({
+      buildPath: ROOT,
+      electronVersion: electron,
+      onlyModules: NATIVE_MODULES,
+      force: true,
+    });
+  } catch (err) {
     throw new Error(
-      `@electron/rebuild exited with ${result.status}. Run it yourself to see why:\n` +
-        `  npx @electron/rebuild -f -w ${names} -v ${electron}\n` +
-        'On Windows a compile from source needs the Visual Studio Build Tools (Desktop ' +
+      `@electron/rebuild failed: ${err instanceof Error ? err.message : String(err)}
+` +
+        `  Run it yourself to see more:  npx electron-rebuild -f -w ${names} -v ${electron}
+` +
+        '  On Windows a compile from source needs the Visual Studio Build Tools (Desktop ' +
         'development with C++). See docs/prerequisites.md.',
     );
   }
@@ -230,7 +234,7 @@ function npmCommand() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    ensureNativeModules({ force: process.argv.includes('--force') });
+    await ensureNativeModules({ force: process.argv.includes('--force') });
   } catch (err) {
     console.error(`\n${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);

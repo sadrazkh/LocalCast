@@ -15,7 +15,7 @@
 import { ensureNativeModules } from './rebuild-native.mjs';
 
 try {
-  ensureNativeModules();
+  await ensureNativeModules();
 } catch (err) {
   console.warn('\npostinstall: could not rebuild the native modules for Electron.');
   console.warn(err instanceof Error ? err.message : String(err));

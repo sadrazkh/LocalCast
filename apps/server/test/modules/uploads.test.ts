@@ -223,7 +223,9 @@ describe('appending chunks', () => {
     const res = await patch(session.id, progress.receivedBytes, CONTENT.subarray(800));
     expect(res.status).toBe(200);
     expect((await readFile(join(folderRoot, 'interrupted.jpg'))).equals(CONTENT)).toBe(true);
-  });
+    // Generous: this test waits on a real socket abort being committed, and a cold CI runner
+    // is much slower at that than a warm developer machine.
+  }, 20_000);
 
   it('refuses a chunk that would exceed the declared size', async () => {
     const session = await startUpload('big.jpg', 100);
@@ -385,14 +387,33 @@ describe('aborting and sweeping', () => {
  * Sends `declared` under a Content-Length that promises more, then kills the socket — which
  * is what a phone leaving Wi-Fi mid-chunk looks like on the wire.
  */
-function sendPartialChunk(
+/**
+ * Stages a real interruption: declare a large chunk, send part of it, kill the socket.
+ *
+ * Two things here are easy to get wrong and were both wrong before.
+ *
+ * The **order**: the server commits a partial chunk when the request aborts, not while it is
+ * still open, so the destroy has to come before any wait for the bytes to appear.
+ *
+ * The **error handler**: destroying a request makes it emit `error`. Resolving the promise
+ * there ends this helper the instant the socket dies, before the server has committed
+ * anything — which is exactly the 0-instead-of-800 this test kept reporting. The abort is the
+ * thing being staged, not a failure, so it is swallowed and the polling below decides when
+ * the work is actually done.
+ *
+ * The wait itself is a poll rather than a sleep. Two 60 ms sleeps passed on a warm developer
+ * machine and failed on a cold CI runner; a poll asks the machine instead of guessing how
+ * slow it is.
+ */
+async function sendPartialChunk(
   id: string,
   offset: number,
   declared: Buffer,
   sendBytes: number,
 ): Promise<void> {
   const url = new URL(server.url);
-  return new Promise((resolve, reject) => {
+
+  await new Promise<void>((resolve, reject) => {
     const req = request({
       method: 'PATCH',
       path: `/api/v1/uploads/${id}`,
@@ -405,14 +426,45 @@ function sendPartialChunk(
         'content-length': String(declared.length),
       },
     });
-    req.on('error', () => resolve());
-    req.write(new Uint8Array(declared.subarray(0, sendBytes)), () => {
-      // Give the server a moment to write what it received before the socket goes.
+    // The abort we are about to cause. Not a failure.
+    req.on('error', () => {});
+    req.write(new Uint8Array(declared.subarray(0, sendBytes)), (err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      // Destroy, not a half-close. Only an RST puts the server's `for await` into the error
+      // path whose `finally` commits the partial bytes; ending the socket cleanly against an
+      // unmet Content-Length leaves nothing recorded at all — verified by watching this poll
+      // time out for the full eight seconds.
+      //
+      // The one timing assumption left: `write`'s callback means the bytes reached the
+      // kernel, not the server, so destroying in the same tick can discard them. 250 ms is
+      // several orders of magnitude more than a loopback hand-off needs. What used to be
+      // timed — how long the server takes to commit, which is what varies between a warm
+      // laptop and a cold CI runner — is polled below instead.
       setTimeout(() => {
         req.destroy();
-        setTimeout(resolve, 60);
-      }, 60);
+        resolve();
+      }, 250);
     });
-    setTimeout(() => reject(new Error('partial chunk never completed')), 5000).unref();
   });
+
+  await waitForReceived(id, sendBytes);
+}
+
+/** Polls the session until the server reports at least `bytes` received. */
+async function waitForReceived(id: string, bytes: number, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await api(`/uploads/${id}`);
+    if (res.ok) {
+      const { upload } = (await res.json()) as { upload: Session };
+      if (upload.receivedBytes >= bytes) return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`server never recorded ${bytes} bytes for upload ${id}`);
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
 }

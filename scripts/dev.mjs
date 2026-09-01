@@ -95,7 +95,7 @@ function shutdown(code) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-ensureNativeModules();
+await ensureNativeModules();
 
 // The renderer is served by Vite, but the main and preload scripts are plain tsc output that
 // Electron loads from disk — without this step `npm run dev` runs whatever was last built,
