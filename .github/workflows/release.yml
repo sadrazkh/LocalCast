@@ -101,7 +101,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist-release
-          find apps/desktop/release apps/desktop-client/release -maxdepth 1 -name '*.exe' -exec cp {} dist-release/ \;
+          # -print0/-d '' because electron-builder names the installers "LocalCast Setup
+          # 0.1.0.exe" — a word-split on that copies four files that do not exist and reports
+          # success for each.
+          find apps/desktop/release apps/desktop-client/release -maxdepth 1 -name '*.exe' -print0 \
+            | while IFS= read -r -d '' f; do cp "$f" dist-release/; done
           cp native/netedge/netedge.exe dist-release/
           ( cd apps/pwa/dist && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist-release/localcast-pwa.zip" . )
           cd dist-release
