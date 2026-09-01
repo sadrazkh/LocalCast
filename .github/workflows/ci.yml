@@ -54,8 +54,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The failure detail is re-emitted as annotations on purpose.
+      #
+      # Downloading a job log needs admin rights on the repository, so a contributor without
+      # them can see that CI is red and nothing about why. Annotations are readable through
+      # the public check-runs API, which makes a remote failure diagnosable instead of
+      # guessable — and guessing costs a full run each time.
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          if npm test 2>&1 | tee test-output.txt; then
+            exit 0
+          fi
+          grep -aE "FAIL|AssertionError|✕|×|→|Error:|error TS" test-output.txt \
+            | head -20 \
+            | while IFS= read -r line; do echo "::error::${line}"; done
+          exit 1
 
       # The project's own health check, run last so its output is the final word in the log.
       # It exits non-zero when something blocking is missing, which on a runner would mean the
