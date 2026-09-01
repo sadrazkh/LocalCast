@@ -1,3 +1,4 @@
+import { formatCode, toAsciiDigits } from '@localcast/client-core';
 import type { Locale } from './locale.js';
 
 /**
@@ -27,32 +28,18 @@ const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '�
 
 /** U+066C ARABIC THOUSANDS SEPARATOR — the grouping mark Persian typography uses. */
 const PERSIAN_GROUP_SEPARATOR = '٬';
-/** U+066B ARABIC DECIMAL SEPARATOR. */
-const PERSIAN_DECIMAL_SEPARATOR = '٫';
 
-/** Extended Arabic-Indic (Persian) ۰-۹ and Arabic-Indic ٠-٩; both reach us from iOS keyboards. */
-const ASCII_DIGIT_BY_CODE_POINT = new Map<string, string>();
-for (let d = 0; d < 10; d += 1) {
-  ASCII_DIGIT_BY_CODE_POINT.set(String.fromCharCode(0x06f0 + d), String(d));
-  ASCII_DIGIT_BY_CODE_POINT.set(String.fromCharCode(0x0660 + d), String(d));
-}
+// `toAsciiDigits` and `formatCode` are protocol normalisation, not presentation — the
+// Electron main process needs them to claim a pairing, and it has no business importing a
+// React package. They live in client-core and are re-exported here so every surface keeps
+// using one definition.
+// Imported above as well: `export … from` re-exports without creating a local binding, and
+// `formatAddress` and `formatDate` below both call `toAsciiDigits`.
+export { formatCode, toAsciiDigits };
 
 /** Maps ASCII digits in `input` to Persian ones. Idempotent: Persian digits pass through. */
 export function toPersianDigits(input: string): string {
   return input.replace(/[0-9]/g, (d) => PERSIAN_DIGITS[Number(d)] ?? d);
-}
-
-/**
- * Maps Persian and Arabic-Indic digits back to ASCII, and normalises the Persian decimal
- * and grouping marks. Every value that goes back to the server — a typed pairing code, a
- * page range, a copies count — passes through here first.
- */
-export function toAsciiDigits(input: string): string {
-  let out = '';
-  for (const ch of input) {
-    out += ASCII_DIGIT_BY_CODE_POINT.get(ch) ?? ch;
-  }
-  return out.replace(/٫/g, '.').replace(/٬/g, ',');
 }
 
 function groupAscii(digits: string, separator: string): string {
@@ -192,13 +179,3 @@ export function formatAddress(host: string, port?: number | null): string {
   return `${left}:${Math.trunc(port)}`;
 }
 
-/**
- * A pairing code. **Always ASCII**, upper-cased, whitespace and separators stripped.
- *
- * This is also the normaliser for what the user types: an iOS Persian keyboard produces
- * «۱۲۳۴», and the server only ever minted `1234`. Comparing the two without this step is a
- * pairing failure that looks like a wrong code.
- */
-export function formatCode(code: string): string {
-  return toAsciiDigits(code).replace(/[\s-]/g, '').toUpperCase();
-}

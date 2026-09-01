@@ -1,0 +1,232 @@
+/* The popover window is created at exactly 340×460 and cannot be resized, so this is a
+   fixed three-band layout: header, scrolling body, action row. */
+.popover {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--lc-bg-base);
+  border-radius: var(--lc-radius-lg);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lc-space-2);
+  flex: 0 0 auto;
+  padding: var(--lc-space-3) var(--lc-space-4);
+  border-block-end: 1px solid var(--lc-border-subtle);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  color: var(--lc-text-primary);
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-semibold);
+}
+
+.brandText {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-4);
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--lc-space-4);
+}
+
+.state {
+  margin: 0;
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lc-space-3);
+}
+
+.fact dt {
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-2xs);
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--lc-text-primary);
+  font-size: var(--lc-fs-xs);
+  min-inline-size: 0;
+}
+
+.latin {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  margin: 0;
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-medium);
+  text-transform: none;
+}
+
+.count {
+  padding-inline: 6px;
+  border-radius: var(--lc-radius-full);
+  background: var(--lc-bg-raised);
+  color: var(--lc-text-secondary);
+}
+
+.deviceList,
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device,
+.folder {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-2);
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-surface);
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-xs);
+}
+
+.notShared {
+  opacity: 0.55;
+}
+
+.deviceName {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lc-text-primary);
+}
+
+.doing {
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-2xs);
+  white-space: nowrap;
+}
+
+.nobody {
+  margin: 0;
+  color: var(--lc-text-faint);
+  font-size: var(--lc-fs-xs);
+}
+
+.off {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+}
+
+.offBody {
+  margin: 0;
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-loose);
+}
+
+.error {
+  margin: 0;
+  color: var(--lc-danger);
+  font-size: var(--lc-fs-2xs);
+}
+
+.menuOnly {
+  margin: 0;
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-loose);
+}
+
+.pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-4);
+}
+
+.qr {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.footer {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 1px;
+  flex: 0 0 auto;
+  border-block-start: 1px solid var(--lc-border-subtle);
+  background: var(--lc-border-subtle);
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  appearance: none;
+  border: 0;
+  background: var(--lc-bg-base);
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: 11px;
+  padding-block: var(--lc-space-2);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--lc-bg-hover);
+  color: var(--lc-text-primary);
+}
+
+.action:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}

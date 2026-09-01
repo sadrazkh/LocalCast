@@ -1,0 +1,76 @@
+.error {
+  margin: 0 0 var(--lc-space-3);
+  color: var(--lc-danger);
+  font-size: var(--lc-fs-xs);
+}
+
+/* The whole table is the drop target, not a separate strip: a folder dragged from Explorer
+   lands where the folders already are, which is where the gesture expects it to go. */
+.drop {
+  position: relative;
+  border: 1px dashed transparent;
+  border-radius: var(--lc-radius-md);
+  transition: border-color var(--lc-dur-normal) var(--lc-ease),
+    background var(--lc-dur-normal) var(--lc-ease);
+}
+
+.dropActive {
+  border-color: var(--lc-accent-border);
+  background: var(--lc-accent-bg);
+}
+
+.dropHint {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lc-space-2);
+  margin: var(--lc-space-3) 0 0;
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-2xs);
+}
+
+.pathCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  color: var(--lc-text-primary);
+  font-size: var(--lc-fs-sm);
+}
+
+.path {
+  /* An absolute Windows path is ASCII with backslashes; without isolation the RTL context
+     reorders the drive letter to the wrong end and the operator cannot read their own path. */
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 40ch;
+}
+
+.sizeCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.sub {
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-2xs);
+}
+
+.rowActions {
+  display: inline-flex;
+  gap: var(--lc-space-1);
+  justify-content: flex-end;
+}

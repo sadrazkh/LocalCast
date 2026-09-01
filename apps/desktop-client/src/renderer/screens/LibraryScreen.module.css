@@ -1,0 +1,97 @@
+/*
+ * 1000×640 is the whole canvas, so the layout is a fixed three-band grid: a toolbar, a
+ * sidebar-plus-content row that takes whatever is left, and a transfer strip that never grows
+ * past a third of the height. Everything scrolls inside its own band, so the window itself
+ * never does.
+ */
+.screen {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(120px, 30%);
+  gap: var(--lc-space-3);
+  block-size: 100%;
+  padding: var(--lc-space-4) var(--lc-space-5) var(--lc-space-5);
+  min-block-size: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+}
+
+.serverName {
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  margin-inline-start: auto;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: var(--lc-space-3);
+  min-block-size: 0;
+}
+
+.sidebar,
+.content,
+.transfers {
+  min-block-size: 0;
+}
+
+.crumbs {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* auto-fill rather than a fixed column count: the same grid has to look deliberate at the
+   1000px canvas width and at whatever the user drags the window to. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--lc-space-3);
+}
+
+.centre {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--lc-space-8);
+}
+
+.cellName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+  color: var(--lc-text-primary);
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: inline-flex;
+  gap: var(--lc-space-1);
+  justify-content: flex-end;
+}
+
+.moreNote {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+}

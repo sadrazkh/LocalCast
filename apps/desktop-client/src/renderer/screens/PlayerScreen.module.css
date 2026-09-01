@@ -1,0 +1,93 @@
+.screen {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--lc-space-3);
+  block-size: 100%;
+  padding: var(--lc-space-4) var(--lc-space-5) var(--lc-space-5);
+  min-block-size: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+}
+
+.title {
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  overflow: hidden;
+  /* Deeper than the app shell: a video sits in a well, and the darkest surface is what stops
+     a letterboxed film reading as a broken layout. */
+  background: var(--lc-bg-abyss);
+}
+
+.video {
+  flex: 1;
+  min-block-size: 0;
+  inline-size: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+.handoff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 100%;
+  padding: var(--lc-space-6);
+}
+
+.readout {
+  flex: none;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--lc-space-3);
+  margin: 0 0 var(--lc-space-4);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fact dt {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+}
+
+.fact dd {
+  margin: 0;
+  font-size: var(--lc-fs-sm);
+  color: var(--lc-text-primary);
+}
+
+/* Durations and byte counts are ASCII in both locales; they are read against a clock. */
+.latin {
+  font-family: var(--lc-font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.tracks {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--lc-space-3);
+}

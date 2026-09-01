@@ -1,0 +1,23 @@
+.shell {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  block-size: 100vh;
+  background: var(--lc-bg-base);
+  overflow: hidden;
+}
+
+/*
+ * The window is created with `titleBarStyle: 'hidden'` and a title-bar overlay, so this strip
+ * is what the user actually grabs to move the window. `app-region` is a Chromium-only
+ * property and has no standard equivalent.
+ */
+.titlebar {
+  -webkit-app-region: drag;
+  background: var(--lc-bg-base);
+  border-block-end: 1px solid var(--lc-border-subtle);
+}
+
+/* Buttons inside a draggable region become undraggable, or they cannot be clicked at all. */
+.titlebar button {
+  -webkit-app-region: no-drag;
+}

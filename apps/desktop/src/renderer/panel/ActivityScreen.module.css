@@ -1,0 +1,50 @@
+.feed {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr) 132px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border-block-end: 1px solid var(--lc-border-subtle);
+  font-size: var(--lc-fs-xs);
+}
+
+.row:last-child {
+  border-block-end: 0;
+}
+
+.time {
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-2xs);
+}
+
+.what {
+  color: var(--lc-text-secondary);
+}
+
+.who {
+  color: var(--lc-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  /* Detail values are file names and paths — ASCII more often than not, and reordered into
+     nonsense by the RTL context without isolation. */
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

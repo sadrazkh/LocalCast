@@ -1,0 +1,49 @@
+/*
+ * The path, scrolled horizontally rather than wrapped.
+ *
+ * `flex-direction: row-reverse` is deliberately NOT used to flip this: the whole strip is
+ * inside `dir="rtl"`, so the logical order already reads right-to-left, and the separator is
+ * a chevron that mirrors with it.
+ */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block-end: var(--lc-space-1);
+  white-space: nowrap;
+}
+
+.crumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.crumb {
+  flex: none;
+  padding-block: 3px;
+  padding-inline: var(--lc-space-2);
+  border: 0;
+  border-radius: var(--lc-radius-sm);
+  background: transparent;
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: var(--lc-fs-xs);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.crumb:active {
+  background: var(--lc-bg-hover);
+}
+
+.current {
+  color: var(--lc-text-primary);
+  font-weight: var(--lc-fw-medium);
+  cursor: default;
+}
+
+.sep {
+  flex: none;
+  color: var(--lc-text-faint);
+}

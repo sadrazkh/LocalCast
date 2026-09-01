@@ -1,0 +1,41 @@
+appId: net.localcast.client
+productName: LocalCast Client
+copyright: LocalCast
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**
+  - assets/icons/**
+  - package.json
+  # The workspace packages are hoisted to the repo root, so they have to be named explicitly
+  # or the installed app cannot resolve them at runtime.
+  - '!node_modules/**'
+  - node_modules/@localcast/**
+
+# Nothing is bundled alongside this app. It has no Go sidecar, no SumatraPDF, no PWA to
+# serve and no database — the whole product is a window onto somebody else's server, and the
+# installer is correspondingly small.
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: assets/icons/app-512.png
+  # No elevation, for the same reason as the server app: nothing here touches a driver, a
+  # service or a machine-wide setting. It writes to the user's profile and their downloads
+  # folder, both of which are theirs already.
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LocalCast Client
+  installerLanguages: [en_US]
+
+publish: null

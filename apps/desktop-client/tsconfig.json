@@ -9,5 +9,6 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/**/*", "src/preload/**/*", "vite.config.ts"]
+  "//": "The preload script is deliberately not here. It is a CommonJS file that runs in Electron's preload context, so it belongs to tsconfig.node.json; type-checking it under the renderer's ESM settings only produces noise about its require() syntax.",
+  "include": ["src/renderer/**/*", "vite.config.ts"]
 }

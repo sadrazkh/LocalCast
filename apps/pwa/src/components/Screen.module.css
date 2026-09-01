@@ -1,0 +1,76 @@
+/*
+ * The frame every route renders inside: a pinned header, one scrolling body, and nothing
+ * else that can scroll. Header and body carry their own safe-area insets, so a route never
+ * has to think about the notch.
+ */
+.screen {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--lc-bg-abyss);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  padding-block-start: calc(var(--lc-space-3) + env(safe-area-inset-top, 0px));
+  padding-block-end: var(--lc-space-3);
+  padding-inline-start: calc(var(--lc-space-4) + env(safe-area-inset-left, 0px));
+  padding-inline-end: calc(var(--lc-space-4) + env(safe-area-inset-right, 0px));
+  background: color-mix(in srgb, var(--lc-bg-base) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-block-end: 1px solid var(--lc-border);
+}
+
+.headerText {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+}
+
+.body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  /* Momentum scrolling without the whole document moving with it. */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-inline-start: calc(var(--lc-space-4) + env(safe-area-inset-left, 0px));
+  padding-inline-end: calc(var(--lc-space-4) + env(safe-area-inset-right, 0px));
+  padding-block: var(--lc-space-4);
+}
+
+/* Routes whose body is edge-to-edge — the player, the camera viewfinder. */
+.flush {
+  padding: 0;
+}
+
+.stale {
+  margin-block-end: var(--lc-space-3);
+}

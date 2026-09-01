@@ -1,0 +1,92 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-2) var(--lc-space-3);
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-raised);
+}
+
+.row[data-status='done'] {
+  background: var(--lc-success-bg);
+}
+
+.icon {
+  display: flex;
+  color: var(--lc-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  min-inline-size: 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--lc-space-3);
+}
+
+.name {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+  white-space: nowrap;
+}
+
+.row[data-status='error'] .status {
+  color: var(--lc-danger);
+}
+
+/* Byte counts stay ASCII and monospace in both locales; they are compared against Explorer. */
+.bytes {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.actions {
+  display: flex;
+  gap: var(--lc-space-1);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  padding: var(--lc-space-4);
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-muted);
+}
+
+.path {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+  direction: ltr;
+  unicode-bidi: isolate;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

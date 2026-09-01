@@ -1,0 +1,26 @@
+/*
+ * The only global rules this app adds on top of `@localcast/ui-kit/tokens.css`.
+ *
+ * Everything else is a CSS module. These four exist because they describe the document and
+ * the window rather than any component in it.
+ */
+
+html,
+body,
+#root {
+  block-size: 100%;
+  margin: 0;
+  background: var(--lc-bg-abyss);
+}
+
+/* `.lc-root` is rendered by `LocaleProvider` and carries the tokens; it has to fill the
+   window or every screen below it computes its height against nothing. */
+body > #root > .lc-root {
+  block-size: 100%;
+}
+
+/* A client window has no page to scroll: each band scrolls inside itself, and a scrollbar on
+   the document would mean a layout has overflowed the 1000×640 canvas. */
+body {
+  overflow: hidden;
+}

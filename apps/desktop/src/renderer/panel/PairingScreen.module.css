@@ -1,0 +1,104 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-5);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  gap: var(--lc-space-6);
+  align-items: start;
+}
+
+.qrColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-5);
+}
+
+.qr {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  /* The QR arrives at 512px and is drawn at 260; nearest-neighbour keeps the modules crisp
+     so a phone camera locks on instead of hunting a blurred grid. */
+  image-rendering: pixelated;
+}
+
+.sideColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-5);
+  min-inline-size: 0;
+}
+
+.addresses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-3) var(--lc-space-4);
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  align-items: flex-start;
+}
+
+.defaults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+}
+
+.defaultsTitle {
+  margin: 0;
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+}
+
+.defaultsHint {
+  margin: 0 0 var(--lc-space-2);
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-xs);
+}
+
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-2) var(--lc-space-3);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-border-subtle);
+  border-radius: var(--lc-radius-sm);
+}
+
+.folderLabel {
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+.waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  margin: 0;
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-xs);
+}

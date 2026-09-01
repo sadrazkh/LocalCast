@@ -1,0 +1,29 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  padding: var(--lc-space-5);
+  gap: var(--lc-space-4);
+  min-block-size: 0;
+}
+
+.screen > * {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--lc-space-8);
+}

@@ -17,7 +17,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@localcast/contract": "*"
+    "@localcast/contract": "*",
+    "@localcast/client-core": "*"
   },
   "peerDependencies": {
     "react": "^19.0.0",

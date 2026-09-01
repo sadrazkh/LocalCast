@@ -1,0 +1,133 @@
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+  margin-block-end: var(--lc-space-4);
+}
+
+.chips {
+  display: flex;
+  gap: var(--lc-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block-end: 2px;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chips > * {
+  flex: none;
+}
+
+.sortRow {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+}
+
+.sortRow > :first-child {
+  flex: 1;
+}
+
+.folders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+}
+
+.folderCard {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.folderIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--lc-radius-md);
+  background: var(--lc-accent-bg);
+  border: 1px solid var(--lc-accent-border);
+  color: var(--lc-accent);
+}
+
+.folderText {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.folderLabel {
+  font-size: var(--lc-fs-body);
+  color: var(--lc-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folderMeta {
+  display: flex;
+  gap: var(--lc-space-2);
+  align-items: center;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.mono {
+  font-family: var(--lc-font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/*
+ * The grid and list containers. The tiles and rows themselves come from `ui-kit`; only their
+ * arrangement is the app's business, because it is the only part that depends on a phone
+ * viewport rather than on the design system.
+ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--lc-space-3);
+}
+
+@media (min-width: 520px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  background: var(--lc-bg-surface);
+  overflow: hidden;
+}
+
+.sentinel {
+  block-size: 1px;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--lc-space-5);
+}
+
+.end {
+  text-align: center;
+  padding-block: var(--lc-space-5);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+}
+
+.staleNote {
+  margin-block-end: var(--lc-space-3);
+}

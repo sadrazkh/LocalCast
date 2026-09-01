@@ -1,0 +1,125 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-5);
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lc-space-3) var(--lc-space-6);
+  padding: var(--lc-space-3) var(--lc-space-4);
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+}
+
+.statusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+}
+
+.statusLabel {
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-2xs);
+}
+
+.statusValue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  color: var(--lc-text-primary);
+  font-size: var(--lc-fs-xs);
+}
+
+.notice {
+  display: flex;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-3) var(--lc-space-4);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-warning);
+  border-radius: var(--lc-radius-md);
+  color: var(--lc-warning);
+}
+
+.noticeTitle {
+  margin: 0 0 var(--lc-space-1);
+  font-size: var(--lc-fs-sm);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+}
+
+.noticeBody {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-loose);
+  color: var(--lc-text-secondary);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--lc-space-4);
+  align-items: start;
+}
+
+/* The proxy warning is a full-width paragraph in the middle of a two-column grid: it is a
+   consequence of the choice above it, not another field. */
+.warning {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--lc-space-3);
+  border-inline-start: 2px solid var(--lc-warning);
+  background: var(--lc-bg-surface);
+  border-radius: var(--lc-radius-sm);
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-loose);
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-2) var(--lc-space-3);
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-surface);
+  font-size: var(--lc-fs-xs);
+  line-height: var(--lc-lh-normal);
+}
+
+.info {
+  color: var(--lc-text-secondary);
+  border-inline-start: 2px solid var(--lc-accent);
+}
+
+.warn {
+  color: var(--lc-warning);
+  border-inline-start: 2px solid var(--lc-warning);
+}
+
+.error {
+  color: var(--lc-danger);
+  border-inline-start: 2px solid var(--lc-danger);
+}
+
+.ok {
+  color: var(--lc-success);
+  font-size: var(--lc-fs-2xs);
+}
+
+.blocked {
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-2xs);
+}

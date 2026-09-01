@@ -1,0 +1,19 @@
+/*
+ * Layout for a stack of FileListRow. The row itself is styled by ui-kit; this only owns the
+ * spacing between rows and the bottom inset that keeps the last one clear of the tab bar and
+ * the iPhone home indicator.
+ */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-block-end: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+.list > * {
+  border-block-end: 1px solid var(--lc-border-subtle);
+}
+
+.list > *:last-child {
+  border-block-end: none;
+}

@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -81,7 +82,9 @@ export declare interface NetEdge {
 }
 
 export class NetEdge extends EventEmitter {
-  #child: ChildProcessWithoutNullStreams | null = null;
+  // stdin is `ignore`: the sidecar is configured over its control API and its config file,
+  // never by writing to it, so leaving a pipe open would only be a handle to leak.
+  #child: ChildProcessByStdio<null, Readable, Readable> | null = null;
   #controlPort: number | null = null;
   #status: EdgeStatus = { ...OFFLINE_STATUS };
   #stdoutBuffer = '';

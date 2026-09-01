@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The renderer loads its own bundle from disk and nothing else. `connect-src` is `'none'`
+      because every network call in this app happens in the main process: the renderer has no
+      reason to reach a server directly, and saying so here means a script that somehow ran in
+      this window could not exfiltrate anything either. `media-src https:` is the one
+      exception — a native <video> streams from the paired server's origin, with the bearer
+      attached by the main process.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self' https:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <title>LocalCast</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

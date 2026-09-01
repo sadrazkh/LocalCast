@@ -1,0 +1,39 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-4);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--lc-fs-sm);
+  color: var(--lc-text-secondary);
+  line-height: 1.7;
+}
+
+.hint {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-danger);
+}
+
+.waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-secondary);
+}
+
+/* The code is read aloud and typed back, so it is spaced out and unmistakably ASCII. */
+.codeInput input {
+  text-align: center;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-family: var(--lc-font-mono);
+}

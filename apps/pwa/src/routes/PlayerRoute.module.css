@@ -1,0 +1,114 @@
+.stage {
+  position: relative;
+  inline-size: 100%;
+  background: #000;
+  /*
+   * The video and its controls do not mirror under `dir="rtl"`. A timeline is a picture of
+   * time, and time in a film runs the same way in every language; flipping it would put the
+   * scrubber's start at the end of the film. `ui-kit`'s direction rule says the same thing.
+   */
+  direction: ltr;
+}
+
+.video {
+  inline-size: 100%;
+  max-block-size: 62vh;
+  display: block;
+  background: #000;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-4);
+  padding-inline: calc(var(--lc-space-4) + env(safe-area-inset-left, 0px));
+  padding-block: var(--lc-space-4);
+  padding-inline-end: calc(var(--lc-space-4) + env(safe-area-inset-right, 0px));
+}
+
+.name {
+  margin: 0;
+  font-size: var(--lc-fs-body);
+  color: var(--lc-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lc-space-2) var(--lc-space-4);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.fact {
+  display: flex;
+  gap: var(--lc-space-1);
+  align-items: baseline;
+}
+
+.factValue {
+  font-family: var(--lc-font-mono);
+  color: var(--lc-text-secondary);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.selectors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--lc-space-3);
+}
+
+.handoff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+}
+
+.handoffActions {
+  display: flex;
+  gap: var(--lc-space-2);
+  flex-wrap: wrap;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-muted);
+  line-height: var(--lc-lh-loose);
+}
+
+.error {
+  margin: 0;
+  color: var(--lc-danger);
+  font-size: var(--lc-fs-sm);
+}
+
+/*
+ * The «پخش نمی‌شود» state. It is a designed panel, not a fallback: for an MKV or an AC3
+ * track this is the *normal* outcome on iOS, and it leads with the action that works rather
+ * than with the apology.
+ */
+.unplayable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-6) var(--lc-space-4);
+  margin-block-end: var(--lc-space-4);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  background: var(--lc-bg-surface);
+  text-align: center;
+}
+
+.unplayableIcon {
+  color: var(--lc-warning);
+}
+
+.unplayableTitle {
+  margin: 0;
+  font-size: var(--lc-fs-body);
+  color: var(--lc-text-primary);
+}

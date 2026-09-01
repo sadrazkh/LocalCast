@@ -1,0 +1,20 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--lc-bg-abyss);
+}
+
+.route {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.splash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 100%;
+  color: var(--lc-text-muted);
+}

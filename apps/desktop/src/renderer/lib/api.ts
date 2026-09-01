@@ -89,6 +89,24 @@ export function qrPayloadOf(minted: PairingMintResult): string {
   return '';
 }
 
+export type FolderPatch = Partial<{
+  label: string;
+  writable: boolean;
+  autoIndex: boolean;
+  /** The share toggle on screen 01. */
+  enabled: boolean;
+}>;
+
+/**
+ * `DesktopApi.folders.update` narrows the patch to label/writable/autoIndex, but the operator
+ * API's `PATCH /folders/:id` also accepts `enabled`, and the main process forwards the body
+ * verbatim. The cast records that mismatch in one place rather than at every call site.
+ */
+export function updateFolder(id: string, patch: FolderPatch) {
+  type Declared = Parameters<DesktopApi['folders']['update']>[1];
+  return getApi().folders.update(id, patch as Declared);
+}
+
 export type PermissionPatch = { folderId: string; mode: AccessMode };
 
 /**

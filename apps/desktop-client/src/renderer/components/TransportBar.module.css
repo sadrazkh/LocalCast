@@ -1,0 +1,107 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-2) var(--lc-space-3);
+  background: var(--lc-bg-surface);
+  border-block-start: 1px solid var(--lc-border);
+  /* Media controls are physical, not linguistic: the timeline runs the same way in both
+     languages, so this bar opts out of the document's RTL flip. */
+  direction: ltr;
+}
+
+.play,
+.mute {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-raised);
+  color: var(--lc-text-primary);
+  cursor: pointer;
+}
+
+.play:hover:not(:disabled),
+.mute:hover:not(:disabled) {
+  background: var(--lc-bg-hover);
+}
+
+.play:disabled,
+.mute:disabled {
+  color: var(--lc-text-faint);
+  cursor: default;
+}
+
+.scrubber {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  block-size: 20px;
+}
+
+.track {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 4px;
+  border-radius: var(--lc-radius-xs);
+  background: linear-gradient(
+    to right,
+    var(--lc-accent) 0,
+    var(--lc-accent) var(--played),
+    var(--lc-border-strong) var(--played),
+    var(--lc-border-strong) var(--buffered),
+    var(--lc-bg-raised) var(--buffered)
+  );
+  pointer-events: none;
+}
+
+/* The real control sits transparently over the painted track, so keyboard seeking and the
+   drag both work while the visuals stay on-token. */
+.range {
+  position: relative;
+  inline-size: 100%;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  block-size: 4px;
+  background: transparent;
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  inline-size: 12px;
+  block-size: 12px;
+  margin-block-start: -4px;
+  border-radius: var(--lc-radius-full);
+  background: var(--lc-accent);
+  border: 2px solid var(--lc-bg-base);
+}
+
+.range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--lc-accent-hover);
+  outline-offset: 2px;
+}
+
+.range:disabled::-webkit-slider-thumb {
+  background: var(--lc-text-faint);
+}
+
+.clock {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-secondary);
+  white-space: nowrap;
+}
+
+.volume {
+  inline-size: 84px;
+  accent-color: var(--lc-accent);
+}

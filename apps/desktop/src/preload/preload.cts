@@ -1,4 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
+// `import ... = require(...)` rather than an ESM import: this is a `.cts` file compiled to
+// CommonJS, which a sandboxed preload script must be, and `verbatimModuleSyntax` will not
+// rewrite ESM syntax into a require for us.
+import electron = require('electron');
+const { contextBridge, ipcRenderer } = electron;
 
 /**
  * The only bridge between the renderer and the main process.

@@ -1,0 +1,29 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--lc-bg-base);
+}
+
+.split {
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+.rail {
+  flex: 0 0 var(--lc-navrail-width);
+  min-inline-size: 0;
+}
+
+.content {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+  /* Each screen scrolls itself. The title bar and the rail stay put, which is what makes a
+     frameless window feel like an app rather than a very tall page. */
+  overflow-y: auto;
+  padding: var(--lc-space-5) var(--lc-space-6);
+  background: var(--lc-bg-abyss);
+}

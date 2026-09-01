@@ -92,6 +92,8 @@ export const copy = {
     'devices.statStreams': 'پخش‌های در جریان',
     'devices.statTraffic': 'داده‌های جابه‌جاشده',
     'devices.statWindow': 'در یک ساعت گذشته',
+    'devices.statNotMeasured': 'هنوز شمرده نمی‌شود',
+    'devices.matrixTitle': 'دسترسی هر دستگاه به هر پوشه',
 
     // ── pairing (screen 03) ────────────────────────────────────────────────────────
     'pairing.defaultsTitle': 'دسترسی پیش‌فرض دستگاه تازه',
@@ -101,6 +103,9 @@ export const copy = {
     'pairing.failed': 'ساختن کد انجام نشد',
 
     // ── settings (screen 14) ───────────────────────────────────────────────────────
+    'settings.level.info': 'اطلاع',
+    'settings.level.warn': 'هشدار',
+    'settings.level.error': 'خطا',
     'settings.storedSecret': 'ذخیره‌شده — برای تغییر مقدار تازه بنویسید',
     'settings.storedSecretPlaceholder': '••••••••••••',
     'settings.testFirst': 'تا وقتی آزمایش موفق نشود، ذخیره ممکن نیست',
@@ -114,6 +119,22 @@ export const copy = {
     // ── activity ───────────────────────────────────────────────────────────────────
     'activity.reload': 'تازه‌سازی',
     'activity.unknownDevice': 'بدون دستگاه',
+    'act.device.claimed': 'دستگاهی کد را وارد کرد',
+    'act.device.approved': 'دستگاه تأیید شد',
+    'act.device.rejected': 'دستگاه رد شد',
+    'act.device.revoked': 'دسترسی دستگاه بسته شد',
+    'act.device.paired': 'دستگاه جفت شد',
+    'act.device.deleted': 'دستگاه حذف شد',
+    'act.folder.added': 'پوشه اضافه شد',
+    'act.folder.removed': 'پوشه برداشته شد',
+    'act.folder.updated': 'پوشه تغییر کرد',
+    'act.pairing.minted': 'کد تازه ساخته شد',
+    'act.permissions.updated': 'دسترسی‌ها تغییر کرد',
+    'act.print.queued': 'کار چاپ در صف نشست',
+    'act.upload.started': 'ارسال فایل شروع شد',
+    'act.upload.completed': 'ارسال فایل تمام شد',
+    'act.upload.aborted': 'ارسال فایل لغو شد',
+    'act.dav.propfind': 'مرور از راه WebDAV',
 
     // ── tray (screen 04) ───────────────────────────────────────────────────────────
     'tray.on': 'سرور روشن است',
@@ -132,6 +153,9 @@ export const copy = {
     'tray.settings': 'تنظیمات',
     'tray.quit': 'خروج',
     'tray.idle': 'بی‌کار',
+    'tray.back': 'بازگشت',
+    'tray.menuOnly':
+      'تنظیمات و خروج از منوی راست‌کلیک روی نماد سینی انجام می‌شود؛ این پنجرهٔ کوچک راهی برای باز کردن پنل ندارد.',
 
     // ── what a device is doing, derived from the activity feed ─────────────────────
     'doing.streaming': 'در حال پخش',
@@ -213,6 +237,8 @@ export const copy = {
     'devices.statStreams': 'Streams in flight',
     'devices.statTraffic': 'Data moved',
     'devices.statWindow': 'in the last hour',
+    'devices.statNotMeasured': 'Not counted yet',
+    'devices.matrixTitle': 'Which device may reach which folder',
 
     'pairing.defaultsTitle': 'Default access for the new device',
     'pairing.defaultsHint': 'You can change it per folder after you approve',
@@ -220,6 +246,9 @@ export const copy = {
     'pairing.minting': 'Making a code…',
     'pairing.failed': 'The code could not be made',
 
+    'settings.level.info': 'Note',
+    'settings.level.warn': 'Warning',
+    'settings.level.error': 'Error',
     'settings.storedSecret': 'Stored — type a new value to replace it',
     'settings.storedSecretPlaceholder': '••••••••••••',
     'settings.testFirst': 'Saving is blocked until a test succeeds',
@@ -232,6 +261,22 @@ export const copy = {
 
     'activity.reload': 'Refresh',
     'activity.unknownDevice': 'No device',
+    'act.device.claimed': 'A device entered the code',
+    'act.device.approved': 'Device approved',
+    'act.device.rejected': 'Device turned away',
+    'act.device.revoked': 'Device access closed',
+    'act.device.paired': 'Device paired',
+    'act.device.deleted': 'Device deleted',
+    'act.folder.added': 'Folder added',
+    'act.folder.removed': 'Folder removed',
+    'act.folder.updated': 'Folder changed',
+    'act.pairing.minted': 'A new code was made',
+    'act.permissions.updated': 'Permissions changed',
+    'act.print.queued': 'Print job queued',
+    'act.upload.started': 'Upload started',
+    'act.upload.completed': 'Upload finished',
+    'act.upload.aborted': 'Upload cancelled',
+    'act.dav.propfind': 'Browsed over WebDAV',
 
     'tray.on': 'Server is on',
     'tray.off': 'Server is off',
@@ -249,6 +294,9 @@ export const copy = {
     'tray.settings': 'Settings',
     'tray.quit': 'Quit',
     'tray.idle': 'Idle',
+    'tray.back': 'Back',
+    'tray.menuOnly':
+      'Settings and Quit live on the tray icon’s right-click menu; this small window has no way to open the panel.',
 
     'doing.streaming': 'Playing',
     'doing.downloading': 'Downloading',

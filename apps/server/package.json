@@ -6,11 +6,17 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./kernel": { "types": "./dist/kernel.d.ts", "default": "./dist/kernel.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./kernel": {
+      "types": "./dist/kernel.d.ts",
+      "default": "./dist/kernel.js"
+    }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest",
     "test:run": "vitest run"

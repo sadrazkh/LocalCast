@@ -1,0 +1,71 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-5);
+  padding-block: var(--lc-space-5);
+}
+
+.viewfinder {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  /*
+   * The camera preview is not mirrored. A selfie preview is, because you are looking at
+   * yourself; a QR being scanned is a thing in the world, and mirroring it makes the code
+   * look wrong to the person aiming the phone.
+   */
+  transform: none;
+}
+
+.hidden {
+  display: none;
+}
+
+.hint {
+  max-inline-size: 34ch;
+  text-align: center;
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-muted);
+  margin: 0;
+}
+
+.manual {
+  inline-size: 100%;
+  max-inline-size: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-4);
+}
+
+.codeInput input {
+  font-family: var(--lc-font-mono);
+  font-size: 28px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.phase {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-sm);
+  color: var(--lc-text-secondary);
+}
+
+.error {
+  color: var(--lc-danger);
+  font-size: var(--lc-fs-xs);
+  text-align: center;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  inline-size: 100%;
+  max-inline-size: 340px;
+}

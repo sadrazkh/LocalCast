@@ -1,0 +1,93 @@
+/*
+ * App-level layout for the installed PWA.
+ *
+ * Two things here that only matter once the app is on the home screen:
+ *
+ *  - **Safe areas.** Installed, LocalCast runs with no Safari chrome at all, so the notch and
+ *    the home indicator sit on top of the app's own pixels. Every edge that touches the
+ *    viewport pads itself with `env(safe-area-inset-*)`, and the tab bar reserves the bottom
+ *    inset inside its own padding rather than adding a spacer — a spacer would show the page
+ *    background through the bar's blur.
+ *  - **No document scrolling.** `body` is fixed at the viewport height and the route's own
+ *    element is the scroller. Otherwise iOS rubber-banding drags the whole app away from the
+ *    status bar and the tab bar floats.
+ *
+ * Colour, type and spacing all come from `@localcast/ui-kit/tokens.css`; nothing below
+ * introduces a value the canvas did not have.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--lc-bg-abyss);
+  color: var(--lc-text-secondary);
+  font-family: var(--lc-font-ui);
+  font-size: var(--lc-fs-body);
+  line-height: var(--lc-lh-normal);
+  -webkit-font-smoothing: antialiased;
+  /* A long-press on a file row must offer nothing; the app has its own affordances. */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root,
+#root > .lc-root {
+  height: 100%;
+}
+
+/*
+ * Text selection is off by default and switched back on for the few things worth copying —
+ * a WebDAV address, a pairing code, an error message. On a touch screen an accidental
+ * selection during a scroll is pure noise.
+ */
+#root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[data-selectable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* iOS zooms the whole page when a focused input's font is under 16px. */
+input,
+select,
+textarea {
+  font-size: max(16px, var(--lc-fs-body));
+}
+
+:focus-visible {
+  outline: var(--lc-focus-ring);
+  outline-offset: 2px;
+}
+
+noscript {
+  display: block;
+  padding: var(--lc-space-6);
+  color: var(--lc-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

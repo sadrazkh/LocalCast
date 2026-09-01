@@ -1,0 +1,64 @@
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+  -webkit-app-region: no-drag;
+}
+
+.label {
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-2xs);
+  white-space: nowrap;
+}
+
+.value {
+  /* An address is ASCII and must read left-to-right even inside a Persian sentence. The
+     isolation is done with CSS rather than with an embedded U+2066, which would travel with
+     a copy-paste and corrupt the value it was meant to protect. */
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 32ch;
+}
+
+.pending {
+  color: var(--lc-text-faint);
+  font-size: var(--lc-fs-2xs);
+}
+
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  appearance: none;
+  border: 1px solid var(--lc-border);
+  background: var(--lc-bg-raised);
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: var(--lc-fs-2xs);
+  padding-inline: var(--lc-space-2);
+  padding-block: 2px;
+  border-radius: var(--lc-radius-sm);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.copy:hover {
+  color: var(--lc-text-primary);
+  background: var(--lc-bg-hover);
+}
+
+.copy:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.copyText {
+  white-space: nowrap;
+}
