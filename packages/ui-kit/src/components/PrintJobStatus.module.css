@@ -1,0 +1,29 @@
+.wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  align-items: flex-start;
+}
+
+.message {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-danger);
+  line-height: var(--lc-lh-normal);
+  max-inline-size: 40ch;
+}
+
+/* The spinner that rides inside the «در حال چاپ» badge. */
+.working {
+  inline-size: 10px;
+  block-size: 10px;
+  border: 1.5px solid currentcolor;
+  border-block-start-color: transparent;
+  border-radius: 50%;
+  animation: lc-printjob-spin 800ms linear infinite;
+}
+
+@keyframes lc-printjob-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

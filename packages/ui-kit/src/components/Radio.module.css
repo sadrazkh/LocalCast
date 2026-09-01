@@ -1,0 +1,113 @@
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+}
+
+.horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--lc-space-4);
+}
+
+.radio {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-3);
+  padding: var(--lc-space-1) 0;
+  cursor: pointer;
+}
+
+/* Card presentation — the default-vs-personal-server choice on screens 14 and 15. */
+.boxed {
+  padding: var(--lc-space-3);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  transition:
+    border-color var(--lc-dur-fast) var(--lc-ease),
+    background-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.boxed:hover:not(.disabled) {
+  background: var(--lc-bg-raised);
+}
+
+.boxedChecked {
+  background: var(--lc-accent-bg);
+  border-color: var(--lc-accent-border);
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * The real input stays in the accessibility tree and keeps the browser's own radio-group
+ * arrow-key behaviour; only its painting is replaced. `appearance: none` on a visible input
+ * would lose the focus ring, so the ring is mirrored onto `.dot` via `:focus-visible + .dot`.
+ */
+.input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.dot {
+  position: relative;
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-block-start: 1px;
+  border: 1px solid var(--lc-border-strong);
+  border-radius: 50%;
+  background: var(--lc-bg-base);
+  transition:
+    border-color var(--lc-dur-fast) var(--lc-ease),
+    box-shadow var(--lc-dur-fast) var(--lc-ease);
+}
+
+.dot::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--lc-accent);
+  transform: scale(0);
+  transition: transform var(--lc-dur-fast) var(--lc-ease);
+}
+
+.input:checked + .dot {
+  border-color: var(--lc-accent);
+}
+
+.input:checked + .dot::after {
+  transform: scale(1);
+}
+
+.input:focus-visible + .dot {
+  box-shadow: var(--lc-focus-ring);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  min-inline-size: 0;
+}
+
+.label {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  line-height: var(--lc-lh-normal);
+}

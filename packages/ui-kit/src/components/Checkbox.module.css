@@ -1,0 +1,75 @@
+.checkbox {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--lc-space-3);
+  cursor: pointer;
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.box {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-block-start: 1px;
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-xs);
+  background: var(--lc-bg-base);
+  color: var(--lc-bg-abyss);
+  transition:
+    background-color var(--lc-dur-fast) var(--lc-ease),
+    border-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.mark {
+  opacity: 0;
+}
+
+.input:checked + .box,
+.input:indeterminate + .box {
+  background: var(--lc-accent);
+  border-color: var(--lc-accent);
+}
+
+.input:checked + .box .mark,
+.input:indeterminate + .box .mark {
+  opacity: 1;
+}
+
+.input:focus-visible + .box {
+  box-shadow: var(--lc-focus-ring);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.label {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}

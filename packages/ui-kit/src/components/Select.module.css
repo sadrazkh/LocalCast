@@ -1,0 +1,82 @@
+.wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fullWidth {
+  inline-size: 100%;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 100%;
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+  color: var(--lc-text-primary);
+  font-family: var(--lc-font-ui);
+  line-height: 1;
+  cursor: pointer;
+  /* Room for the chevron, on whichever side the reading order puts it. */
+  padding-inline: var(--lc-space-3) var(--lc-space-6);
+  transition:
+    border-color var(--lc-dur-fast) var(--lc-ease),
+    box-shadow var(--lc-dur-fast) var(--lc-ease);
+}
+
+.select:hover:not(:disabled) {
+  border-color: var(--lc-border-strong);
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--lc-border-strong);
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.invalid {
+  border-color: var(--lc-danger);
+}
+
+.sm {
+  block-size: 26px;
+  font-size: var(--lc-fs-2xs);
+}
+
+.md {
+  block-size: var(--lc-control-height);
+  font-size: var(--lc-fs-xs);
+}
+
+.lg {
+  block-size: 40px;
+  font-size: var(--lc-fs-sm);
+}
+
+.chevron {
+  position: absolute;
+  inset-inline-end: var(--lc-space-2);
+  pointer-events: none;
+  color: var(--lc-text-dim);
+}
+
+/*
+ * The native option list is drawn by the OS and cannot be styled, so it is left alone
+ * rather than half-styled. `color-scheme: dark` on `.lc-root` is what makes Windows render
+ * it dark; without that the popup would be a white rectangle in a black app.
+ */
+.option {
+  background: var(--lc-bg-overlay);
+  color: var(--lc-text-primary);
+}
+
+.placeholder {
+  color: var(--lc-text-faint);
+}

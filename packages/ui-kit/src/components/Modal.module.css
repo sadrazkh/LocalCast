@@ -1,0 +1,117 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--lc-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--lc-space-6);
+  background: var(--lc-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  max-block-size: 100%;
+  background: var(--lc-bg-overlay);
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-md);
+  box-shadow: var(--lc-shadow-lg);
+  overflow: hidden;
+}
+
+.sm {
+  max-inline-size: 360px;
+}
+
+.md {
+  max-inline-size: 480px;
+}
+
+.lg {
+  max-inline-size: 640px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-3);
+  padding-inline: var(--lc-space-5);
+  padding-block: var(--lc-space-4);
+  border-block-end: 1px solid var(--lc-border);
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  min-inline-size: 0;
+  margin-inline-end: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  line-height: var(--lc-lh-normal);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 26px;
+  block-size: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-radius-sm);
+  background: transparent;
+  color: var(--lc-text-dim);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--lc-bg-hover);
+  color: var(--lc-text-primary);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}
+
+.body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+  padding-inline: var(--lc-space-5);
+  padding-block: var(--lc-space-4);
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-secondary);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  padding-inline: var(--lc-space-5);
+  padding-block: var(--lc-space-3);
+  border-block-start: 1px solid var(--lc-border);
+  background: var(--lc-bg-surface);
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  margin-inline-start: auto;
+}

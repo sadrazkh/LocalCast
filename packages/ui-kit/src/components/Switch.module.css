@@ -1,0 +1,77 @@
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  cursor: pointer;
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.track {
+  position: relative;
+  flex: none;
+  inline-size: 34px;
+  block-size: 18px;
+  padding: 0;
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-full);
+  background: var(--lc-bg-raised);
+  cursor: inherit;
+  transition:
+    background-color var(--lc-dur-normal) var(--lc-ease),
+    border-color var(--lc-dur-normal) var(--lc-ease);
+}
+
+.track:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}
+
+.checked {
+  background: var(--lc-accent);
+  border-color: var(--lc-accent);
+}
+
+/*
+ * The thumb is positioned with `inset-inline-start`, not `translateX`. A transform would
+ * send it left in Persian and the switch would read as off when it is on — the whole point
+ * of writing this kit in logical properties.
+ */
+.thumb {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: 50%;
+  background: var(--lc-text-muted);
+  transition:
+    inset-inline-start var(--lc-dur-normal) var(--lc-ease),
+    background-color var(--lc-dur-normal) var(--lc-ease);
+}
+
+.checked .thumb {
+  inset-inline-start: calc(100% - 16px);
+  background: var(--lc-bg-abyss);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.label {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}

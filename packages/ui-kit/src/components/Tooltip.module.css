@@ -1,0 +1,45 @@
+.wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+/*
+ * A zero-width layer pinned to the trigger's centre.
+ *
+ * `inset-inline: 50% 50%` collapses the layer to a vertical line through the middle of the
+ * trigger in *both* directions, and a centred flex item overflows it symmetrically. The
+ * usual `inset-inline-start: 50%; translate: -50%` trick does not survive RTL: the start
+ * edge becomes the right edge but the translate stays physical, and the bubble lands a full
+ * width off target.
+ */
+.layer {
+  position: absolute;
+  inset-inline: 50% 50%;
+  display: flex;
+  justify-content: center;
+  z-index: var(--lc-z-tooltip);
+  pointer-events: none;
+}
+
+.top {
+  inset-block-end: calc(100% + var(--lc-space-1));
+}
+
+.bottom {
+  inset-block-start: calc(100% + var(--lc-space-1));
+}
+
+.bubble {
+  inline-size: max-content;
+  max-inline-size: 260px;
+  padding-inline: var(--lc-space-2);
+  padding-block: var(--lc-space-1);
+  background: var(--lc-bg-overlay);
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-sm);
+  box-shadow: var(--lc-shadow-md);
+  color: var(--lc-text-secondary);
+  font-size: var(--lc-fs-2xs);
+  line-height: var(--lc-lh-normal);
+  text-align: start;
+}

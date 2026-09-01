@@ -1,0 +1,70 @@
+.tablist {
+  display: flex;
+  align-items: stretch;
+  gap: var(--lc-space-1);
+  border-block-end: 1px solid var(--lc-border);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border: 0;
+  /* The active underline lives on the tab's own block-end edge, sitting on top of the
+     tablist rule. A transparent border keeps every tab the same height. */
+  border-block-end: 2px solid transparent;
+  margin-block-end: -1px;
+  background: transparent;
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--lc-dur-fast) var(--lc-ease),
+    border-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--lc-text-primary);
+}
+
+.tab:focus-visible {
+  outline: none;
+  border-radius: var(--lc-radius-xs);
+  box-shadow: var(--lc-focus-ring);
+}
+
+.tab:disabled {
+  color: var(--lc-text-faint);
+  cursor: not-allowed;
+}
+
+.active {
+  color: var(--lc-text-primary);
+  border-block-end-color: var(--lc-border-strong);
+}
+
+.accented.active {
+  border-block-end-color: var(--lc-accent);
+  color: var(--lc-accent);
+}
+
+.icon {
+  flex: none;
+}
+
+.trailing {
+  flex: none;
+  color: var(--lc-text-faint);
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-regular);
+}
+
+.panel:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}

@@ -1,0 +1,53 @@
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+  white-space: nowrap;
+}
+
+.dot {
+  flex: none;
+  border-radius: 50%;
+  /* A faint halo so the dot reads on both --lc-bg-base and --lc-bg-raised. */
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 25%);
+}
+
+.sm {
+  inline-size: 6px;
+  block-size: 6px;
+}
+
+.md {
+  inline-size: 8px;
+  block-size: 8px;
+}
+
+.connected {
+  background: var(--lc-success);
+}
+
+.disconnected {
+  background: var(--lc-danger);
+}
+
+.connecting {
+  background: var(--lc-warning);
+  animation: lc-connection-pulse 1.4s var(--lc-ease) infinite;
+}
+
+.label {
+  color: var(--lc-text-secondary);
+}
+
+@keyframes lc-connection-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}

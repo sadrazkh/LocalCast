@@ -1,0 +1,132 @@
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+  padding-inline: var(--lc-space-3);
+  color: var(--lc-text-primary);
+  transition:
+    border-color var(--lc-dur-fast) var(--lc-ease),
+    box-shadow var(--lc-dur-fast) var(--lc-ease);
+}
+
+.control:hover:not(.disabled) {
+  border-color: var(--lc-border-strong);
+}
+
+/*
+ * The ring goes on the wrapper, not the <input>, because the reveal toggle and the trailing
+ * adornment live inside the same box and a ring around only the text node would look broken.
+ */
+.control:focus-within {
+  border-color: var(--lc-border-strong);
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.invalid {
+  border-color: var(--lc-danger);
+}
+
+.invalid:focus-within {
+  border-color: var(--lc-danger);
+  box-shadow: 0 0 0 2px var(--lc-danger);
+}
+
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sm {
+  block-size: 26px;
+  font-size: var(--lc-fs-2xs);
+}
+
+.md {
+  block-size: var(--lc-control-height);
+  font-size: var(--lc-fs-xs);
+}
+
+.lg {
+  block-size: 40px;
+  font-size: var(--lc-fs-sm);
+}
+
+.fullWidth {
+  inline-size: 100%;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-family: var(--lc-font-ui);
+  line-height: 1;
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--lc-text-faint);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+/*
+ * `latin` fields hold values that are typed back into machines: control-plane URLs, access
+ * keys, domains, page ranges. They are forced to LTR and isolated so a Persian UI does not
+ * reorder the string, and rendered monospace so `l`/`1` and `0`/`O` are distinguishable.
+ * The isolation is CSS rather than embedded bidi marks, which would travel with a copy.
+ */
+.latin {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-xs);
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+  letter-spacing: 0.01em;
+}
+
+.affix {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--lc-text-dim);
+}
+
+/* Reveal toggle and other in-field buttons. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  margin-inline-end: calc(var(--lc-space-1) * -1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-radius-xs);
+  background: transparent;
+  color: var(--lc-text-dim);
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--lc-text-primary);
+}
+
+.action:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}

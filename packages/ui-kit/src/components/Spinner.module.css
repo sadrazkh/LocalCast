@@ -1,0 +1,39 @@
+.spinner {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--lc-border-strong);
+  border-top-color: var(--lc-accent);
+  animation: lc-spin 700ms linear infinite;
+}
+
+.sm {
+  inline-size: 12px;
+  block-size: 12px;
+  border-width: 1.5px;
+}
+
+.md {
+  inline-size: 16px;
+  block-size: 16px;
+  border-width: 2px;
+}
+
+.lg {
+  inline-size: 24px;
+  block-size: 24px;
+  border-width: 2.5px;
+}
+
+/* On a filled accent button the ring has to read against the accent, not against grey. */
+.onAccent {
+  border-color: rgb(0 0 0 / 25%);
+  border-top-color: var(--lc-bg-abyss);
+}
+
+@keyframes lc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

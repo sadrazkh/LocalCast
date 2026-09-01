@@ -1,0 +1,120 @@
+.viewport {
+  position: fixed;
+  inset-block-end: var(--lc-space-4);
+  /* Both inline insets, so the stack hugs the same edge in Persian and English. */
+  inset-inline-start: var(--lc-space-4);
+  inset-inline-end: var(--lc-space-4);
+  z-index: var(--lc-z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-2);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-3);
+  inline-size: 100%;
+  max-inline-size: 380px;
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-3);
+  background: var(--lc-bg-overlay);
+  border: 1px solid var(--lc-border-strong);
+  border-radius: var(--lc-radius-md);
+  box-shadow: var(--lc-shadow-md);
+  pointer-events: auto;
+}
+
+.icon {
+  flex: none;
+  margin-block-start: 1px;
+  color: var(--lc-text-dim);
+}
+
+.info .icon {
+  color: var(--lc-accent);
+}
+
+.success .icon {
+  color: var(--lc-success);
+}
+
+.warning .icon {
+  color: var(--lc-warning);
+}
+
+.danger .icon {
+  color: var(--lc-danger);
+}
+
+/* A hairline of tone colour on the leading edge — inline-start, so it flips with the text. */
+.info {
+  border-inline-start: 2px solid var(--lc-accent);
+}
+
+.success {
+  border-inline-start: 2px solid var(--lc-success);
+}
+
+.warning {
+  border-inline-start: 2px solid var(--lc-warning);
+}
+
+.danger {
+  border-inline-start: 2px solid var(--lc-danger);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  min-inline-size: 0;
+  margin-inline-end: auto;
+}
+
+.title {
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  line-height: var(--lc-lh-normal);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex: none;
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-radius-xs);
+  background: transparent;
+  color: var(--lc-text-faint);
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  color: var(--lc-text-primary);
+  background: var(--lc-bg-hover);
+}
+
+.dismiss:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}

@@ -1,0 +1,132 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-4);
+}
+
+.frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  aspect-ratio: 1;
+  background: var(--lc-bg-abyss);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-xl);
+}
+
+.media {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The four corner marks. Drawn as absolutely-positioned L shapes with `inset-inline-*`, so
+ * the frame is symmetric and identical in both directions — a viewfinder has no reading
+ * order, but writing it physically would still leave a stray `left` for the next person to
+ * copy.
+ */
+.corner {
+  position: absolute;
+  inline-size: 28px;
+  block-size: 28px;
+  border-color: var(--lc-accent);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+
+.topStart {
+  inset-block-start: 14px;
+  inset-inline-start: 14px;
+  border-block-start-width: 2px;
+  border-inline-start-width: 2px;
+  border-start-start-radius: var(--lc-radius-md);
+}
+
+.topEnd {
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  border-block-start-width: 2px;
+  border-inline-end-width: 2px;
+  border-start-end-radius: var(--lc-radius-md);
+}
+
+.bottomStart {
+  inset-block-end: 14px;
+  inset-inline-start: 14px;
+  border-block-end-width: 2px;
+  border-inline-start-width: 2px;
+  border-end-start-radius: var(--lc-radius-md);
+}
+
+.bottomEnd {
+  inset-block-end: 14px;
+  inset-inline-end: 14px;
+  border-block-end-width: 2px;
+  border-inline-end-width: 2px;
+  border-end-end-radius: var(--lc-radius-md);
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lc-space-2);
+  color: var(--lc-text-faint);
+  font-size: var(--lc-fs-2xs);
+  text-align: center;
+  padding-inline: var(--lc-space-6);
+}
+
+.prompt {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-muted);
+  text-align: center;
+  max-inline-size: 32ch;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-danger);
+  text-align: center;
+}
+
+/*
+ * The «کد ۴ رقمی» fallback. Always visible, never hidden behind a "having trouble?" link:
+ * on iOS a refused camera permission cannot be re-requested from the page, so for those
+ * users this is the only way in.
+ */
+.fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+  background: transparent;
+  color: var(--lc-text-secondary);
+  font: inherit;
+  font-size: var(--lc-fs-xs);
+  cursor: pointer;
+}
+
+.fallback:hover {
+  background: var(--lc-bg-hover);
+  border-color: var(--lc-border-strong);
+  color: var(--lc-text-primary);
+}
+
+.fallback:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}

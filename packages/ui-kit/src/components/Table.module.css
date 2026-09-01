@@ -1,0 +1,106 @@
+.scroll {
+  inline-size: 100%;
+  overflow: auto;
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--lc-fs-sm);
+  color: var(--lc-text-secondary);
+}
+
+.caption {
+  padding-block-end: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  text-align: start;
+}
+
+/*
+ * The canvas's column-header treatment: 12px, muted, on the raised surface, separated from
+ * the body by a single hairline. No uppercase — Persian has no case, and applying
+ * `text-transform` would silently do nothing on one half of the product and shout on the
+ * other.
+ */
+.th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  background: var(--lc-bg-raised);
+  border-block-end: 1px solid var(--lc-border);
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-muted);
+  text-align: start;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.alignEnd {
+  text-align: end;
+}
+
+.td {
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-3);
+  border-block-end: 1px solid var(--lc-border-subtle);
+  vertical-align: middle;
+}
+
+.dense .td {
+  padding-block: var(--lc-space-2);
+}
+
+.row {
+  transition: background-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.row:last-child .td {
+  border-block-end: 0;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--lc-bg-hover);
+}
+
+.clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.selected {
+  background: var(--lc-accent-bg);
+}
+
+/* Sizes, addresses and timestamps: ASCII, monospace, isolated from the RTL paragraph. */
+.latin {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+  color: var(--lc-text-dim);
+  white-space: nowrap;
+}
+
+.alignEnd.latin {
+  text-align: end;
+}
+
+.emptyCell {
+  padding: 0;
+}
+
+.emptyBody {
+  padding: var(--lc-space-6);
+  text-align: center;
+  color: var(--lc-text-dim);
+  font-size: var(--lc-fs-xs);
+}

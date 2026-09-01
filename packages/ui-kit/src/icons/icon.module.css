@@ -1,0 +1,20 @@
+.icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  /* Never let an icon inherit a text line-height and push a row taller than 44px. */
+  line-height: 0;
+}
+
+/*
+ * Direction-encoding icons only.
+ *
+ * A back arrow means "towards where I came from", which is physically left in Persian and
+ * physically right in English, so it flips. A play triangle, the logo and the video
+ * timeline mean the same thing in both — flipping them produces a rewind button that
+ * claims to play, which is why the mirror is opt-in per icon rather than applied to
+ * `.icon`.
+ */
+:global([dir='rtl']) .mirror {
+  transform: scaleX(-1);
+}

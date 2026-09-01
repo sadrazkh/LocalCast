@@ -1,0 +1,80 @@
+.bar {
+  display: flex;
+  align-items: stretch;
+  inline-size: 100%;
+  min-block-size: var(--lc-tabbar-height);
+  background: var(--lc-bg-base);
+  border-block-start: 1px solid var(--lc-border);
+  /*
+   * The iPhone home indicator sits under the bar. Without this the last row of labels is
+   * unreadable on every device with a notch, and 393×852 — the size this product is drawn
+   * at — is exactly such a device.
+   */
+  padding-block-end: env(safe-area-inset-bottom, 0);
+}
+
+.fixed {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: var(--lc-z-dropdown);
+}
+
+.item {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding-block: var(--lc-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--lc-text-dim);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: color var(--lc-dur-fast) var(--lc-ease);
+  /* iOS taps a 44px target comfortably; anything smaller is a mis-tap generator. */
+  min-block-size: 44px;
+}
+
+.item:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+  border-radius: var(--lc-radius-sm);
+}
+
+.item:disabled {
+  color: var(--lc-text-faint);
+  cursor: not-allowed;
+}
+
+.active {
+  color: var(--lc-accent);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.label {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Unread/attention marker. Positioned inline-end of the icon, so it flips with the layout. */
+.dot {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: calc(50% - 16px);
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--lc-danger);
+}

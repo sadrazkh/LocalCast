@@ -1,0 +1,101 @@
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+  inline-size: var(--lc-navrail-width);
+  flex: none;
+  padding: var(--lc-space-3);
+  background: var(--lc-bg-base);
+  /* The rail's edge faces the content, so the rule is on the inline-end side. */
+  border-inline-end: 1px solid var(--lc-border);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  padding-inline: var(--lc-space-2);
+  padding-block: var(--lc-space-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  inline-size: 100%;
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border: 0;
+  border-radius: var(--lc-radius-sm);
+  background: transparent;
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: var(--lc-fs-xs);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color var(--lc-dur-fast) var(--lc-ease),
+    color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.item:hover:not(:disabled) {
+  background: var(--lc-bg-hover);
+  color: var(--lc-text-primary);
+}
+
+.item:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}
+
+.item:disabled {
+  color: var(--lc-text-faint);
+  cursor: not-allowed;
+}
+
+.active {
+  background: var(--lc-accent-bg);
+  color: var(--lc-accent-fg);
+}
+
+.active .icon {
+  color: var(--lc-accent);
+}
+
+.icon {
+  flex: none;
+  color: var(--lc-text-dim);
+}
+
+.label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-inline-end: auto;
+}
+
+.count {
+  flex: none;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer {
+  padding-inline: var(--lc-space-2);
+  padding-block-start: var(--lc-space-2);
+  border-block-start: 1px solid var(--lc-border-subtle);
+}

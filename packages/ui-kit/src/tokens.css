@@ -1,0 +1,282 @@
+/*
+ * LocalCast design tokens.
+ *
+ * Transcribed from docs/design-tokens.md, which was extracted from the 16-screen design
+ * canvas. Every value here is authoritative; components must never hard-code a hex.
+ *
+ * There is one theme and it is dark. The canvas has no light mode, so there is no
+ * `prefers-color-scheme` branch here on purpose — a half-guessed light palette would be
+ * worse than none.
+ *
+ * The tokens are declared on `:root` (so an app that owns the whole document gets them for
+ * free) and on `.lc-root` (so the Electron tray popover, which mounts into a fragment of a
+ * larger document, can scope them). `<LocaleProvider>` renders the `.lc-root` element.
+ */
+
+/* ── Vazirmatn, self-hosted ──────────────────────────────────────────────────────────────
+ *
+ * NEVER point these at fonts.googleapis.com. The server is routinely reached from a
+ * network with no internet egress; a blocked font request does not fail loudly, it just
+ * leaves every Persian string in a fallback face that shreds the typography. The binaries
+ * are not committed — see ./fonts/README.md for which subsets to drop in.
+ *
+ * Latin and Arabic are separate faces with `unicode-range`, so a Persian-only screen never
+ * downloads the latin subset and vice versa.
+ */
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Light-arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Light-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Regular-arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Medium-arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-Medium-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-SemiBold-arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/Vazirmatn-SemiBold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root,
+.lc-root {
+  /* ── Surfaces, deepest to highest ───────────────────────────────────────────────── */
+  --lc-bg-abyss: #08090b;
+  --lc-bg-base: #0d0e12;
+  --lc-bg-surface: #12141a;
+  --lc-bg-raised: #17191e;
+  --lc-bg-overlay: #1e2026;
+  --lc-bg-hover: #22252c;
+
+  /* ── Text ───────────────────────────────────────────────────────────────────────── */
+  --lc-text-primary: #f2f3f5;
+  --lc-text-secondary: #c9ced6;
+  --lc-text-muted: #8a8f98;
+  --lc-text-dim: #6f757f;
+  --lc-text-faint: #5c626c;
+
+  /* ── Lines ──────────────────────────────────────────────────────────────────────── */
+  --lc-border: #262931;
+  --lc-border-strong: #3a3d44;
+  --lc-border-subtle: #1a1c21;
+
+  /* ── Accent and status ──────────────────────────────────────────────────────────── */
+  --lc-accent: #4da3ff;
+  --lc-accent-hover: #7fbcff;
+  --lc-accent-bg: #04121f;
+  --lc-accent-border: #2f5d80;
+  --lc-accent-fg: #dbeaf7;
+  --lc-success: #3ddc97;
+  --lc-success-bg: #052b1c;
+  --lc-warning: #f0b429;
+  --lc-danger: #e0655f;
+
+  /* ── Typography ─────────────────────────────────────────────────────────────────── */
+  --lc-font-ui: 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --lc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --lc-fs-display: 24px;
+  --lc-fs-title: 16px;
+  --lc-fs-body: 15px;
+  --lc-fs-sm: 14.5px;
+  --lc-fs-xs: 13px;
+  --lc-fs-2xs: 12px;
+
+  --lc-fw-light: 300;
+  --lc-fw-regular: 400;
+  --lc-fw-medium: 500;
+  --lc-fw-semibold: 600;
+
+  --lc-lh-tight: 1.25;
+  --lc-lh-normal: 1.55;
+  --lc-lh-loose: 1.75;
+
+  /* ── Shape ──────────────────────────────────────────────────────────────────────── */
+  --lc-radius-xs: 2px;
+  --lc-radius-sm: 6px;
+  --lc-radius-md: 9px;
+  --lc-radius-lg: 12px;
+  --lc-radius-xl: 20px;
+  --lc-radius-full: 999px;
+
+  /* ── Spacing scale: 4 / 8 / 12 / 16 / 20 / 24 / 32 ──────────────────────────────── */
+  --lc-space-1: 4px;
+  --lc-space-2: 8px;
+  --lc-space-3: 12px;
+  --lc-space-4: 16px;
+  --lc-space-5: 20px;
+  --lc-space-6: 24px;
+  --lc-space-8: 32px;
+
+  /* ── Depth. Derived from black, not a new palette entry. ────────────────────────── */
+  --lc-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --lc-shadow-md: 0 4px 14px rgb(0 0 0 / 45%);
+  --lc-shadow-lg: 0 16px 48px rgb(0 0 0 / 55%);
+  --lc-scrim: rgb(0 0 0 / 62%);
+
+  /* ── Focus. One ring, used by every interactive element. ────────────────────────── */
+  --lc-focus-ring: 0 0 0 2px var(--lc-bg-base), 0 0 0 4px var(--lc-accent);
+  --lc-focus-ring-tight: 0 0 0 2px var(--lc-accent);
+
+  /* ── Motion. Short, because the product is meant to feel like a system tool. ────── */
+  --lc-dur-fast: 90ms;
+  --lc-dur-normal: 160ms;
+  --lc-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ── Stacking ───────────────────────────────────────────────────────────────────── */
+  --lc-z-dropdown: 100;
+  --lc-z-tooltip: 200;
+  --lc-z-modal: 300;
+  --lc-z-toast: 400;
+
+  /* ── Canvas layout references (docs/design-tokens.md §"Canvas layout") ──────────── */
+  --lc-panel-width: 1000px;
+  --lc-panel-height: 640px;
+  --lc-mobile-width: 393px;
+  --lc-mobile-height: 852px;
+  --lc-navrail-width: 208px;
+  --lc-tabbar-height: 56px;
+  --lc-control-height: 32px;
+  --lc-row-height: 44px;
+}
+
+.lc-root {
+  /* Tells form controls, scrollbars and the caret that there is no light theme. */
+  color-scheme: dark;
+  accent-color: var(--lc-accent);
+
+  background: var(--lc-bg-base);
+  color: var(--lc-text-secondary);
+  font-family: var(--lc-font-ui);
+  font-size: var(--lc-fs-body);
+  font-weight: var(--lc-fw-regular);
+  line-height: var(--lc-lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.lc-root *,
+.lc-root *::before,
+.lc-root *::after {
+  box-sizing: border-box;
+}
+
+.lc-root ::selection {
+  background: var(--lc-accent-border);
+  color: var(--lc-text-primary);
+}
+
+/* Thin, quiet scrollbars — the canvas is dense and a chrome-coloured 15px bar wrecks it. */
+.lc-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.lc-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lc-root ::-webkit-scrollbar-thumb {
+  background: var(--lc-border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--lc-radius-full);
+}
+
+.lc-root ::-webkit-scrollbar-thumb:hover {
+  background: var(--lc-border-strong);
+  background-clip: content-box;
+}
+
+/*
+ * Screen-reader-only. Lives here rather than in a component module because half a dozen
+ * components need it and duplicating it per module is how the two copies drift apart.
+ */
+.lc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-root *,
+  .lc-root *::before,
+  .lc-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,123 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  inline-size: 100%;
+  min-block-size: var(--lc-row-height);
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border: 0;
+  border-block-end: 1px solid var(--lc-border-subtle);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  transition: background-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.row:last-child {
+  border-block-end: 0;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--lc-bg-hover);
+}
+
+.clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.selected {
+  background: var(--lc-accent-bg);
+}
+
+/*
+ * The open affordance when the row also carries action buttons. It fills the row's free
+ * space but draws no box of its own, so the two hit areas sit side by side instead of the
+ * invalid nesting a button-inside-a-button would produce.
+ */
+.rowButton {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.rowButton:focus-visible {
+  outline: none;
+  border-radius: var(--lc-radius-xs);
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.icon {
+  flex: none;
+  color: var(--lc-text-dim);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  margin-inline-end: auto;
+}
+
+.name {
+  font-size: var(--lc-fs-body);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /*
+   * File names are frequently Latin inside an RTL list. `plaintext` lets each name pick its
+   * own direction from its first strong character, so `S01E04 - Pilot.mkv` and
+   * «مستند دریا.mp4» both read correctly in the same column.
+   */
+  unicode-bidi: plaintext;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+/* Size and date: ASCII, isolated so the RTL row cannot reorder them. */
+.latin {
+  font-family: var(--lc-font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.separator {
+  color: var(--lc-text-faint);
+}
+
+.notes {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex: none;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-1);
+  flex: none;
+}

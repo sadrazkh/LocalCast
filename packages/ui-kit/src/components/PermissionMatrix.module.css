@@ -1,0 +1,99 @@
+.scroll {
+  inline-size: 100%;
+  overflow: auto;
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.corner,
+.columnHeader,
+.rowHeader,
+.cell {
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border-block-end: 1px solid var(--lc-border-subtle);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.corner,
+.columnHeader {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--lc-bg-raised);
+  border-block-end: 1px solid var(--lc-border);
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-muted);
+  letter-spacing: 0.02em;
+}
+
+/*
+ * The device column stays put while the folder columns scroll. `inset-inline-start` rather
+ * than `left`, so it sticks to the right edge in Persian without a second rule.
+ */
+.rowHeader,
+.corner {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--lc-bg-surface);
+}
+
+.corner {
+  z-index: 3;
+  background: var(--lc-bg-raised);
+}
+
+.rowHeader {
+  min-inline-size: 160px;
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-regular);
+  color: var(--lc-text-primary);
+}
+
+.deviceName {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-inline-size: 220px;
+}
+
+.deviceNote {
+  display: block;
+  margin-block-start: 2px;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.row:last-child .rowHeader,
+.row:last-child .cell {
+  border-block-end: 0;
+}
+
+.row:hover .cell,
+.row:hover .rowHeader {
+  background: var(--lc-bg-raised);
+}
+
+.locked {
+  opacity: 0.55;
+}
+
+.folderLabel {
+  display: block;
+  max-inline-size: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folderNote {
+  display: block;
+  margin-block-start: 2px;
+  font-weight: var(--lc-fw-regular);
+  color: var(--lc-text-faint);
+}

@@ -1,0 +1,87 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  min-block-size: var(--lc-row-height);
+  padding-inline: var(--lc-space-3);
+  padding-block: var(--lc-space-2);
+  border-block-end: 1px solid var(--lc-border-subtle);
+  background: transparent;
+  transition: background-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.row:last-child {
+  border-block-end: 0;
+}
+
+.row:hover {
+  background: var(--lc-bg-hover);
+}
+
+/* Pending devices are tinted so a queue of approvals is visible at a glance. */
+.pending {
+  background: var(--lc-bg-raised);
+}
+
+.revoked {
+  opacity: 0.55;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  color: var(--lc-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  margin-inline-end: auto;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+}
+
+.name {
+  font-size: var(--lc-fs-sm);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.separator {
+  color: var(--lc-text-faint);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex: none;
+}
+
+.code {
+  flex: none;
+}

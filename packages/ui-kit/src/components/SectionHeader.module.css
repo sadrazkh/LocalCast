@@ -1,0 +1,59 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  padding-block-end: var(--lc-space-2);
+}
+
+.ruled {
+  border-block-end: 1px solid var(--lc-border-subtle);
+}
+
+.icon {
+  flex: none;
+  color: var(--lc-text-dim);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  margin-inline-end: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--lc-fs-title);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+.small .title {
+  /* The column-header treatment: uppercase-weight rather than uppercase, which Persian
+     does not have. Muted, 12px, tracked slightly. */
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.description {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  line-height: var(--lc-lh-normal);
+}
+
+.count {
+  flex: none;
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  flex: none;
+}

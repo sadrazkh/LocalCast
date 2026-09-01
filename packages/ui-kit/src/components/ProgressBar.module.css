@@ -1,0 +1,90 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  min-inline-size: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.label {
+  margin-inline-end: auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valueText {
+  flex: none;
+  color: var(--lc-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  position: relative;
+  overflow: hidden;
+  inline-size: 100%;
+  background: var(--lc-bg-raised);
+  border-radius: var(--lc-radius-xs);
+}
+
+.sm {
+  block-size: 3px;
+}
+
+.md {
+  block-size: 6px;
+}
+
+/*
+ * The fill is a normal-flow block sized with `inline-size`, so it grows from the inline
+ * start edge — right in Persian, left in English — with no transform and no override.
+ */
+.fill {
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--lc-accent);
+  transition: inline-size var(--lc-dur-normal) var(--lc-ease);
+}
+
+.tone-accent .fill {
+  background: var(--lc-accent);
+}
+
+.tone-success .fill {
+  background: var(--lc-success);
+}
+
+.tone-warning .fill {
+  background: var(--lc-warning);
+}
+
+.tone-danger .fill {
+  background: var(--lc-danger);
+}
+
+/* Indeterminate: a short bar sweeping along the inline axis. `inset-inline-start` rather
+   than `translateX`, so it sweeps in the reading direction. */
+.indeterminate {
+  position: absolute;
+  inset-block: 0;
+  inline-size: 35%;
+  animation: lc-progress-sweep 1.1s var(--lc-ease) infinite;
+}
+
+@keyframes lc-progress-sweep {
+  from {
+    inset-inline-start: -35%;
+  }
+
+  to {
+    inset-inline-start: 100%;
+  }
+}

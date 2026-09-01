@@ -32,6 +32,7 @@ export const certStrategySchema = z.enum(['control-plane', 'external-proxy', 'dn
 export type CertStrategy = z.infer<typeof certStrategySchema>;
 
 export const dnsProviderSchema = z.enum(['cloudflare', 'digitalocean', 'route53', 'gandi']);
+export type DnsProvider = z.infer<typeof dnsProviderSchema>;
 
 export const networkConfigSchema = z
   .object({

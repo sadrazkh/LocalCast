@@ -1,0 +1,79 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  padding: var(--lc-space-3) var(--lc-space-4);
+  background: var(--lc-bg-surface);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  min-inline-size: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+}
+
+.label {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-muted);
+  margin-inline-end: auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon {
+  flex: none;
+  color: var(--lc-text-faint);
+}
+
+.value {
+  font-size: var(--lc-fs-display);
+  font-weight: var(--lc-fw-semibold);
+  color: var(--lc-text-primary);
+  line-height: var(--lc-lh-tight);
+}
+
+/*
+ * Byte sizes, addresses and uptimes are ASCII and monospace, and they are isolated so an
+ * RTL paragraph cannot reorder them. `formatBytes` and `formatAddress` never emit bidi
+ * marks precisely because this exists.
+ */
+.latin {
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-title);
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.tone-neutral .value {
+  color: var(--lc-text-primary);
+}
+
+.tone-accent .value {
+  color: var(--lc-accent);
+}
+
+.tone-success .value {
+  color: var(--lc-success);
+}
+
+.tone-warning .value {
+  color: var(--lc-warning);
+}
+
+.tone-danger .value {
+  color: var(--lc-danger);
+}

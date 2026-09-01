@@ -1,0 +1,93 @@
+.group {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 2px;
+  gap: 2px;
+  background: var(--lc-bg-base);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+}
+
+.fullWidth {
+  display: flex;
+  inline-size: 100%;
+}
+
+.fullWidth .segment {
+  flex: 1 1 0;
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lc-space-1);
+  padding-inline: var(--lc-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--lc-radius-xs);
+  background: transparent;
+  color: var(--lc-text-dim);
+  font: inherit;
+  font-weight: var(--lc-fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--lc-dur-fast) var(--lc-ease),
+    color var(--lc-dur-fast) var(--lc-ease),
+    border-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.sm .segment {
+  block-size: 22px;
+  padding-inline: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+}
+
+.md .segment {
+  block-size: 26px;
+  font-size: var(--lc-fs-2xs);
+}
+
+.lg .segment {
+  block-size: var(--lc-control-height);
+  font-size: var(--lc-fs-xs);
+}
+
+.segment:hover:not(:disabled):not(.selected) {
+  background: var(--lc-bg-hover);
+  color: var(--lc-text-secondary);
+}
+
+.segment:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}
+
+.segment:disabled {
+  cursor: not-allowed;
+  color: var(--lc-text-faint);
+}
+
+.selected {
+  background: var(--lc-accent-bg);
+  border-color: var(--lc-accent-border);
+  color: var(--lc-accent-fg);
+}
+
+/*
+ * «بسته» selected is deliberately grey rather than red. It is a legitimate, common setting
+ * — most folders are closed to most devices — and painting a whole matrix column red would
+ * read as a page full of errors.
+ */
+.selected.none {
+  background: var(--lc-bg-hover);
+  border-color: var(--lc-border-strong);
+  color: var(--lc-text-muted);
+}
+
+.hint {
+  margin-block-start: var(--lc-space-1);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+  line-height: var(--lc-lh-normal);
+}

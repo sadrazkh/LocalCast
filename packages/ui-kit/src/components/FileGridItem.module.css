@@ -1,0 +1,155 @@
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  padding: var(--lc-space-2);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-md);
+  background: var(--lc-bg-surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  min-inline-size: 0;
+  transition:
+    background-color var(--lc-dur-fast) var(--lc-ease),
+    border-color var(--lc-dur-fast) var(--lc-ease);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-border-strong);
+}
+
+.clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring);
+}
+
+.selected {
+  background: var(--lc-accent-bg);
+  border-color: var(--lc-accent-border);
+}
+
+/* The open affordance, when action buttons also live on the tile. Draws no box of its own. */
+.rowButton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.rowButton:focus-visible {
+  outline: none;
+  border-radius: var(--lc-radius-sm);
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--lc-radius-sm);
+  background: var(--lc-bg-base);
+}
+
+.poster {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The no-poster tile.
+ *
+ * Phase 1 ships no ffmpeg, so video posters do not exist and this is what most library
+ * items look like. It is styled as a finished state — a centred kind icon with the kind
+ * named underneath — rather than an empty box, because an empty box reads as a failed image
+ * load and sends people looking for a bug that is actually a documented scope decision.
+ */
+.fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lc-space-1);
+  inline-size: 100%;
+  block-size: 100%;
+  color: var(--lc-text-faint);
+}
+
+.fallbackLabel {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+}
+
+.duration {
+  position: absolute;
+  inset-block-end: var(--lc-space-1);
+  inset-inline-end: var(--lc-space-1);
+  padding-inline: var(--lc-space-1);
+  border-radius: var(--lc-radius-xs);
+  background: rgb(0 0 0 / 70%);
+  color: var(--lc-text-secondary);
+  font-family: var(--lc-font-mono);
+  font-size: var(--lc-fs-2xs);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.name {
+  font-size: var(--lc-fs-xs);
+  color: var(--lc-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-dim);
+}
+
+.latin {
+  font-family: var(--lc-font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.separator {
+  color: var(--lc-text-faint);
+}
+
+.actions {
+  position: absolute;
+  inset-block-start: var(--lc-space-2);
+  inset-inline-end: var(--lc-space-2);
+  display: flex;
+  gap: var(--lc-space-1);
+}

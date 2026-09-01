@@ -1,0 +1,60 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-1);
+  padding-inline: var(--lc-space-2);
+  padding-block: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--lc-radius-full);
+  font-size: var(--lc-fs-2xs);
+  font-weight: var(--lc-fw-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.square {
+  border-radius: var(--lc-radius-xs);
+}
+
+.neutral {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-border);
+  color: var(--lc-text-muted);
+}
+
+.accent {
+  background: var(--lc-accent-bg);
+  border-color: var(--lc-accent-border);
+  color: var(--lc-accent-fg);
+}
+
+.success {
+  background: var(--lc-success-bg);
+  border-color: var(--lc-success);
+  color: var(--lc-success);
+}
+
+/*
+ * Warning and danger have no dedicated background token in the canvas, so they borrow the
+ * raised surface and carry their colour on the border and the text. Inventing a tinted
+ * background here would be inventing a palette entry.
+ */
+.warning {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-warning);
+  color: var(--lc-warning);
+}
+
+.danger {
+  background: var(--lc-bg-raised);
+  border-color: var(--lc-danger);
+  color: var(--lc-danger);
+}
+
+.dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+  flex: none;
+}

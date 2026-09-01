@@ -1,0 +1,42 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-2);
+  min-inline-size: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lc-space-2);
+}
+
+.label {
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-medium);
+  color: var(--lc-text-muted);
+}
+
+.marker {
+  font-size: var(--lc-fs-2xs);
+  color: var(--lc-text-faint);
+}
+
+.required {
+  color: var(--lc-danger);
+}
+
+.hint {
+  font-size: var(--lc-fs-2xs);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-text-dim);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lc-space-1);
+  font-size: var(--lc-fs-2xs);
+  line-height: var(--lc-lh-normal);
+  color: var(--lc-danger);
+}
