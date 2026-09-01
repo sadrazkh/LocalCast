@@ -1,0 +1,86 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-3);
+  flex: 0 0 auto;
+  /* Exactly the height `titleBarOverlay` was created with in windows.ts. A mismatch here
+     puts the caption buttons over the content or leaves a dead strip under them. */
+  block-size: 38px;
+  padding-inline: var(--lc-space-4);
+  background: var(--lc-bg-base);
+  border-block-end: 1px solid var(--lc-border-subtle);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/*
+ * The one physical measurement in this app.
+ *
+ * Windows draws the minimise/maximise/close buttons at the physical top-right of the window
+ * whatever the text direction is — they do not mirror with `dir="rtl"`. So the space kept
+ * clear for them is `padding-right`, not `padding-inline-end`, and it is deliberate.
+ */
+.reserved {
+  padding-right: 148px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lc-space-2);
+  color: var(--lc-text-primary);
+  font-size: var(--lc-fs-xs);
+  font-weight: var(--lc-fw-semibold);
+}
+
+.brandText {
+  /* The product name is Latin in both locales and must not be reflowed by the RTL context. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: var(--lc-space-4);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.langGroup {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--lc-bg-raised);
+  border: 1px solid var(--lc-border);
+  border-radius: var(--lc-radius-sm);
+  -webkit-app-region: no-drag;
+}
+
+.lang {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--lc-text-muted);
+  font: inherit;
+  font-size: var(--lc-fs-2xs);
+  padding-inline: var(--lc-space-2);
+  padding-block: 2px;
+  border-radius: var(--lc-radius-xs);
+  cursor: pointer;
+}
+
+.lang:hover {
+  color: var(--lc-text-secondary);
+  background: var(--lc-bg-hover);
+}
+
+.lang:focus-visible {
+  outline: none;
+  box-shadow: var(--lc-focus-ring-tight);
+}
+
+.langActive {
+  background: var(--lc-bg-overlay);
+  color: var(--lc-text-primary);
+}

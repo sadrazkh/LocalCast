@@ -74,7 +74,13 @@ export interface PairingServiceDeps {
   events: EventBus;
   /** Signs claim tickets. Reusing the JWT key keeps the number of secrets at one. */
   ticketSecret: Uint8Array;
-  publicHost: string;
+  /**
+   * Read at mint time rather than captured at construction: the MagicDNS name is not known
+   * until `netedge` has connected, and it changes again whenever the user switches between
+   * the default coordination server and their own Headscale. A snapshot taken at boot would
+   * put a stale or placeholder host into the QR code.
+   */
+  publicHost: () => string;
   ownerUserId: () => string;
 }
 
@@ -133,7 +139,7 @@ export class PairingService {
     return {
       id,
       code,
-      qr: { v: 1, host: this.deps.publicHost, code, secret },
+      qr: { v: 1, host: this.deps.publicHost(), code, secret },
       expiresAt,
     };
   }

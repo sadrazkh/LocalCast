@@ -36,6 +36,12 @@ export interface ServerConfig {
   refreshTokenTtlMs: number;
   /** Walk the shared folders once at boot. Off in tests that drive the indexer directly. */
   indexOnStart: boolean;
+  /**
+   * Directory holding the built PWA. Served from this same origin, so the phone never has
+   * to be told a second address — whatever host the QR code carried serves both the app and
+   * its data. Empty disables it, which is how tests and a dev server run.
+   */
+  webRoot: string;
   logLevel: LogLevel;
 }
 
@@ -76,6 +82,7 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     accessTokenTtlMs: overrides.accessTokenTtlMs ?? 30 * DAY_MS,
     refreshTokenTtlMs: overrides.refreshTokenTtlMs ?? 180 * DAY_MS,
     indexOnStart: overrides.indexOnStart ?? true,
+    webRoot: overrides.webRoot ?? '',
     logLevel: overrides.logLevel ?? 'info',
   };
 }

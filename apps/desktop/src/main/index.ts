@@ -110,8 +110,9 @@ async function bootstrap(): Promise<void> {
       tempDir: p.tempDir,
       vendorDir: p.vendorDir,
       edgeSecret,
-      signingKey,
+      jwtSecret: signingKey,
       webRoot: p.webRoot,
+      version: app.getVersion(),
     });
   } catch (err) {
     if (err instanceof ServerNotBuilt) {
@@ -160,7 +161,13 @@ async function bootstrap(): Promise<void> {
     },
   }, appConfig.get().locale);
 
-  edge.on('status', (status: EdgeStatus) => tray?.update(status));
+  edge.on('status', (status: EdgeStatus) => {
+    tray?.update(status);
+    // Hand the MagicDNS name to the server as soon as the node has one, so the next QR code
+    // carries the address devices can actually reach. It changes again on a mode switch,
+    // which is why this follows the status stream rather than being read once at boot.
+    if (status.host) serverHandle?.setPublicHost(status.host);
+  });
   tray.update(edge.status);
 
   registerIpc({

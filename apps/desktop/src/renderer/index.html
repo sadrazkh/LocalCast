@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      The renderer is loaded from disk and must never reach out to the network. The machine
+      it runs on is routinely behind a firewall with no egress, and this window is the one
+      surface that can grant a device access to the user's files — it has no business
+      fetching anything. `img-src data:` is here for exactly one thing: the QR code, which
+      the main process renders to a data URL so the renderer cannot reformat the payload.
+      The `ws:` entry is the Vite dev server's HMR socket; nothing listens on it in a packaged
+      build.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ws://localhost:5174"
+    />
+    <title>LocalCast</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

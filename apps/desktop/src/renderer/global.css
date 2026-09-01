@@ -1,0 +1,39 @@
+/*
+ * The only global stylesheet in the renderer.
+ *
+ * Everything a component draws lives in that component's own CSS Module. These rules are
+ * here because they belong to `<html>`, `<body>` and the React root, which no module can
+ * reach. The design tokens themselves come from `@localcast/ui-kit/tokens.css`, imported
+ * ahead of this file in `main.tsx`.
+ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  block-size: 100%;
+}
+
+body {
+  background: var(--lc-bg-abyss);
+  color: var(--lc-text-secondary);
+  font-family: var(--lc-font-ui);
+  font-size: var(--lc-fs-body);
+  /* The window is a fixed-size app shell, not a document: every surface scrolls its own
+     body region instead of the page, so the frameless title bar never scrolls away. */
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  block-size: 100%;
+}
+
+/* `LocaleProvider` renders the `.lc-root` element the tokens are scoped to. It has to fill
+   the window, or every surface inside it lays out against a zero-height parent. */
+#root > .lc-root {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+}

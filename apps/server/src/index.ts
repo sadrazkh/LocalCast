@@ -15,6 +15,7 @@ import { errorHandler, notFoundHandler } from './http/errors.js';
 import { createDeviceRouter } from './http/routes/device.js';
 import { createEventsRouter } from './http/routes/events.js';
 import { createOperatorRouter } from './http/routes/operator.js';
+import { mountWebClient } from './http/web.js';
 import type { Logger, ServerContext, ServerModule } from './kernel.js';
 import { Indexer } from './library/indexer.js';
 import { SqlPermissionService } from './library/permissions.js';
@@ -85,7 +86,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     activity,
     events,
     ticketSecret: config.jwtSecret,
-    publicHost: config.publicHost,
+    publicHost: () => config.publicHost,
     ownerUserId: () => ownerUserId(db),
   });
 
@@ -130,6 +131,10 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
       log.error('module failed to register', { module: mod.name, error: String(err) });
     }
   }
+
+  // Last, so the SPA fallback can never shadow an API route: anything the routers above
+  // did not claim is either an app asset or a genuine 404.
+  mountWebClient(app, config.webRoot, log);
 
   app.use(notFoundHandler);
   app.use(errorHandler(log));

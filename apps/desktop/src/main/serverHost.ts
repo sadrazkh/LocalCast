@@ -1,5 +1,4 @@
-import { createServer } from 'node:net';
-import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 /**
  * Boots the Node app server inside the Electron main process.
@@ -9,21 +8,30 @@ import type { Server } from 'node:http';
  * app, no browser pointed at 127.0.0.1 — can reach the user's files by guessing the port.
  */
 
-export interface ServerHandle {
-  port: number;
-  http: Server;
-  ctx: unknown;
-  dispose(): Promise<void>;
-}
-
 export interface ServerHostOptions {
   dataDir: string;
   tempDir: string;
   vendorDir: string;
   edgeSecret: string;
-  signingKey: Buffer;
-  /** Directory holding the built PWA, served as the client. */
+  /** HS256 key for device tokens. Held by Electron behind DPAPI, never written here. */
+  jwtSecret: Buffer;
+  /** Directory holding the built PWA. Empty in development, where Vite serves it. */
   webRoot: string;
+  version: string;
+}
+
+export interface ServerHandle {
+  port: number;
+  /**
+   * Publishes the MagicDNS name once `netedge` knows it.
+   *
+   * The server cannot be told this at boot: the node has not connected yet, and the name
+   * changes again whenever the user switches between the default coordination server and
+   * their own Headscale. Pairing reads it at mint time, so a QR minted after this call
+   * carries the right host without anything being restarted.
+   */
+  setPublicHost(host: string): void;
+  dispose(): Promise<void>;
 }
 
 export class ServerNotBuilt extends Error {
@@ -36,50 +44,49 @@ export class ServerNotBuilt extends Error {
   }
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.on('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      if (addr === null || typeof addr === 'string') {
-        srv.close();
-        reject(new Error('could not determine a free port'));
-        return;
-      }
-      const { port } = addr;
-      srv.close(() => resolve(port));
-    });
-  });
+/** Shape of `@localcast/server`, kept local so the desktop build does not need its types. */
+interface ServerModuleShape {
+  createServer(options: Record<string, unknown>): Promise<{
+    config: { publicHost: string };
+    listen(port?: number): Promise<AddressInfo>;
+    dispose(): Promise<void>;
+  }>;
 }
 
 /**
- * Imported dynamically so that a desktop build can start, show its window and report the
- * problem when the server package is missing — rather than dying at module load with a stack
- * trace the user cannot act on.
+ * Imported dynamically so a desktop build can start, show its window and report the problem
+ * when the server package is missing — rather than dying at module load with a stack trace
+ * the user cannot act on.
  */
 export async function startServer(options: ServerHostOptions): Promise<ServerHandle> {
-  let mod: {
-    createServer: (opts: ServerHostOptions & { port: number; host: string }) => Promise<{
-      listen(): Promise<Server>;
-      dispose(): Promise<void>;
-      ctx: unknown;
-    }>;
-  };
+  let mod: ServerModuleShape;
   try {
-    mod = (await import('@localcast/server')) as never;
+    mod = (await import('@localcast/server')) as unknown as ServerModuleShape;
   } catch (cause) {
     throw new ServerNotBuilt(cause);
   }
 
-  const port = await freePort();
-  const instance = await mod.createServer({ ...options, port, host: '127.0.0.1' });
-  const http = await instance.listen();
+  const instance = await mod.createServer({
+    dataDir: options.dataDir,
+    tempDir: options.tempDir,
+    vendorDir: options.vendorDir,
+    edgeSecret: options.edgeSecret,
+    jwtSecret: new Uint8Array(options.jwtSecret),
+    webRoot: options.webRoot,
+    version: options.version,
+    host: '127.0.0.1',
+    // 0 asks the OS for a free port. Nothing outside this process needs to predict it —
+    // netedge is told the number after the fact.
+    port: 0,
+  });
+
+  const address = await instance.listen();
 
   return {
-    port,
-    http,
-    ctx: instance.ctx,
+    port: address.port,
+    setPublicHost(host: string) {
+      instance.config.publicHost = host;
+    },
     dispose: () => instance.dispose(),
   };
 }
