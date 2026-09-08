@@ -41,6 +41,17 @@ const appConfigSchema = z.object({
    */
   shareOnLanUnencrypted: z.boolean().default(true),
   /**
+   * Force the address published to devices, instead of detecting it.
+   *
+   * Empty, which is the normal case: the server picks the machine's real network adapter and
+   * ignores VPN tunnels and virtual switches — see `net/lanAddress.ts` for how. This exists for
+   * the machine where that still lands on the wrong one of several real adapters, because the
+   * alternative for such a user is waiting for a new build. It is a plain string in a file they
+   * can open in Notepad, and an address typed here goes into the certificate too, so nothing
+   * else has to be reconfigured to match.
+   */
+  lanAddress: z.string().default(''),
+  /**
    * Reach this machine from other networks. Off until the user asks for it — it is the only
    * part of the product that needs an account, and most people never leave the house with it.
    *

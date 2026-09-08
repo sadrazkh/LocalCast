@@ -873,14 +873,15 @@ describe('the queue', () => {
     });
     let submitting = false;
     let released = false;
+    let readWhileInFlight = false;
 
     const exec: ExecFileFn = async (file, args) => {
       const script = file === POWERSHELL ? args[args.length - 1] ?? '' : '';
       if (script.includes('Get-PrintJob')) {
         // Visible only for the window in which the document is being handed to Windows.
-        return submitting && !released
-          ? { stdout: JSON.stringify([{ Id: 99, JobStatus: 'Spooling' }]), stderr: '' }
-          : { stdout: '', stderr: '' };
+        if (!submitting || released) return { stdout: '', stderr: '' };
+        readWhileInFlight = true;
+        return { stdout: JSON.stringify([{ Id: 99, JobStatus: 'Spooling' }]), stderr: '' };
       }
       if (script.includes('Get-Printer ')) return { stdout: '[]', stderr: '' };
       submitting = true;
@@ -897,7 +898,16 @@ describe('the queue', () => {
       await printJson({ printerId, source: { kind: 'library', fileId: pdfId } })
     ).json()) as { job: { id: string } };
 
-    await vi.waitFor(() => expect(statusOf(job.id)).toBe('printing'), { interval: 5 });
+    /**
+     * Wait for the queue to have been read *during* the handover, which is the behaviour under
+     * test, rather than for the status to reach `printing`, which is not.
+     *
+     * The status flips before discovery starts, so releasing on it left the visible window as a
+     * race between a 1 ms poll and a 5 ms waiter — and under a loaded machine the poll lost
+     * roughly one run in three. That was the test's own timing, not the module's: on the runs
+     * where it failed, nothing had polled yet.
+     */
+    await vi.waitFor(() => expect(readWhileInFlight).toBe(true), { interval: 1 });
     release();
     await settle(job.id, 'done');
 

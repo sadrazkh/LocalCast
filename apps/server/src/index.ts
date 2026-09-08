@@ -25,6 +25,7 @@ import { SqlPermissionService } from './library/permissions.js';
 import { FsFileResolver } from './library/resolver.js';
 import { createLogger } from './logger.js';
 import { buildLanAccess, type LanAccess } from './net/lanAccess.js';
+import { lanCandidates } from './net/lanAddress.js';
 import { createPlaintextListener } from './net/plaintext.js';
 import { ensureLanCertificate, type LanCertificate } from './net/selfSigned.js';
 
@@ -137,6 +138,23 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
         log,
       })
     : null;
+
+  if (config.lan) {
+    /**
+     * Every address the machine holds and what was decided about each one.
+     *
+     * One line, at boot, because the failure this guards against is silent: the app publishes an
+     * address, the phone cannot route to it, and there is nothing anywhere saying which of the
+     * machine's four addresses was chosen or why the other three were not. With this, a user who
+     * reports "the address is wrong" has already sent the answer.
+     */
+    log.info('local network addresses', {
+      published: lanCert?.publishHost ?? '(none)',
+      seen: lanCandidates()
+        .map((c) => `${c.address} on ${c.adapter}${c.tunnel ? ` — skipped: ${c.note}` : ''}`)
+        .join('; '),
+    });
+  }
 
   // Filled in by `listen`, because the port is not known until the socket is bound.
   let lanEndpoint: LanEndpoint | null = null;
@@ -520,9 +538,10 @@ export {
   defaultSanHosts,
   ensureLanCertificate,
   generateLanCertificate,
-  lanIpv4Addresses,
 } from './net/selfSigned.js';
 export type { LanCertificate } from './net/selfSigned.js';
+export { lanCandidates, lanIpv4Addresses } from './net/lanAddress.js';
+export type { LanCandidate } from './net/lanAddress.js';
 export { buildLanAccess } from './net/lanAccess.js';
 export type { LanAccess, LanAddress } from './net/lanAccess.js';
 export { CapabilityReports, deviceCapabilityReportSchema } from './http/capabilities.js';

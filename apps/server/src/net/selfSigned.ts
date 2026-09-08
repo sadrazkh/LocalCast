@@ -25,6 +25,7 @@ import {
   toPem,
   utf8String,
 } from './der.js';
+import { lanIpv4Addresses } from './lanAddress.js';
 import type { Logger } from '../kernel.js';
 
 /**
@@ -92,56 +93,44 @@ const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`);
 /** One DNS label per dot-separated part; `os.hostname()` can return things that are not. */
 const DNS_NAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
 
-function isPrivateV4(ip: string): boolean {
-  return ip.startsWith('192.168.') || ip.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
-}
-
-/**
- * The machine's addresses on the local network, private ranges first.
- *
- * Loopback and link-local are skipped, and a private address is preferred, because a VPN
- * adapter or a container bridge can otherwise supply an address no phone in the house can
- * reach — and an address in the certificate that nobody can connect to is a certificate that
- * produces a name-mismatch error on top of the untrusted-issuer one.
- */
-export function lanIpv4Addresses(interfaces = os.networkInterfaces()): string[] {
-  const found: string[] = [];
-  for (const addresses of Object.values(interfaces)) {
-    for (const address of addresses ?? []) {
-      if (address.family !== 'IPv4' || address.internal) continue;
-      if (address.address.startsWith('169.254.')) continue;
-      found.push(address.address);
-    }
-  }
-  return [...found.filter(isPrivateV4), ...found.filter((ip) => !isPrivateV4(ip))];
-}
-
 /**
  * The full SAN set: loopback (so the same certificate works when the app talks to itself),
  * the machine's name, and every LAN address it currently holds.
  *
  * `<hostname>.local` is included because Windows and Bonjour both resolve it, and a name is
  * kinder to type on a phone than four numbers.
+ *
+ * The order is load-bearing — `publishHostFrom` reads it as a preference list. `extra` comes
+ * first because it is the operator saying, in configuration, which address to use; detection is
+ * good but it is still detection, and a machine where it picks wrong needs a way to say so that
+ * does not require a new build. Everything after that is `lanAddress.ts`'s ranking, which puts
+ * the real network adapter ahead of any VPN tunnel.
  */
 export function defaultSanHosts(extra: readonly string[] = []): string[] {
   const hosts = ['localhost', '127.0.0.1'];
+  for (const host of extra) {
+    const normalised = host.trim().toLowerCase();
+    if (normalised.length > 0) hosts.push(normalised);
+  }
   const hostname = os.hostname().trim().toLowerCase();
   if (DNS_NAME.test(hostname)) {
     hosts.push(hostname);
     if (!hostname.includes('.')) hosts.push(`${hostname}.local`);
   }
   hosts.push(...lanIpv4Addresses());
-  for (const host of extra) {
-    const normalised = host.trim().toLowerCase();
-    if (normalised.length > 0) hosts.push(normalised);
-  }
   return [...new Set(hosts)].filter((host) => IPV4.test(host) || DNS_NAME.test(host));
 }
 
-/** The address devices are told to use, chosen from a SAN set. */
+/**
+ * The address devices are told to use: the first IPv4 in the SAN set.
+ *
+ * First, and nothing cleverer — the ranking already happened, in `defaultSanHosts` and the
+ * classification behind it. This used to re-pick with a rule of its own ("any private address"),
+ * which is how a VPN tunnel on `10.255.0.2` ended up in the QR code while the machine's actual
+ * Wi-Fi address sat two entries further down the same list.
+ */
 function publishHostFrom(hosts: readonly string[]): string | null {
-  const ips = hosts.filter((host) => IPV4.test(host) && host !== '127.0.0.1');
-  const preferred = ips.find(isPrivateV4) ?? ips[0];
+  const preferred = hosts.find((host) => IPV4.test(host) && host !== '127.0.0.1');
   if (preferred !== undefined) return preferred;
   // No usable IPv4 at all — the machine is off the network, or only has IPv6. The hostname is
   // still in the certificate, so a device that can resolve it can still connect.

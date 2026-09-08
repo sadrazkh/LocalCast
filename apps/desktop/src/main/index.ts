@@ -291,6 +291,7 @@ async function bootstrap(): Promise<void> {
       nativeBinding: existsSync(p.nativeBinding) ? p.nativeBinding : '',
       lan: appConfig.get().shareOnLan,
       lanPlaintext: appConfig.get().shareOnLan && appConfig.get().shareOnLanUnencrypted,
+      lanAddress: appConfig.get().lanAddress,
     });
   } catch (err) {
     if (err instanceof ServerNotBuilt) {

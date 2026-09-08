@@ -36,6 +36,11 @@ export interface ServerHostOptions {
    * interstitial is not the app, so a scanned link never becomes a paired device.
    */
   lanPlaintext: boolean;
+  /**
+   * Force the published local-network address rather than detecting it. Empty normally; see
+   * `lanAddress` in `appConfig.ts` for who this is for.
+   */
+  lanAddress: string;
 }
 
 export interface ServerHandle {
@@ -107,6 +112,9 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
     nativeBinding: options.nativeBinding,
     lan: options.lan,
     lanPlaintext: options.lanPlaintext,
+    // A list because that is what the SAN takes; the override is a single address, and an
+    // empty one has to mean "detect", not "publish the empty string".
+    lanHosts: options.lanAddress.trim() === '' ? [] : [options.lanAddress.trim()],
     host: '127.0.0.1',
     // 0 asks the OS for a free port. Nothing outside this process needs to predict it —
     // netedge is told the number after the fact.

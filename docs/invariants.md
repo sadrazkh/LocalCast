@@ -30,6 +30,7 @@
 | A control-plane switch leaves devices, pairings and permissions untouched | `apps/server/src/http/routes/operatorNetwork.ts` | `apps/server/test/invariants.test.ts` → *moving between the default coordination server and a personal Headscale*; and, column for column through the real IPC handler, `apps/desktop/src/main/__tests__/modeSwitch.test.ts` |
 | A control-plane switch reconfigures the running sidecar rather than restarting it | `apps/desktop/src/main/netedge.ts` (`applyConfig`), `native/netedge/internal/edge/edge.go` (`Edge.Apply`) | `apps/desktop/src/main/__tests__/netedge.switch.test.ts` — no Go binary needed, so it holds on every checkout; `modeSwitch.test.ts` proves the same thing against the real sidecar but **skips when `netedge.exe` has not been built** |
 | The LAN listener speaks TLS, and loopback still demands the edge secret | `apps/server/src/index.ts`, `apps/server/src/auth/middleware.ts` | `apps/server/test/lan.test.ts` |
+| The address published to devices is the machine's real network adapter, never a VPN tunnel or a virtual switch — whether or not the VPN is running | `apps/server/src/net/lanAddress.ts` | `apps/server/test/lanAddress.test.ts` |
 
 ## The offline test, and why it is written the way it is
 

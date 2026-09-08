@@ -23,7 +23,6 @@ import { mkdirSync, mkdtempSync, openSync, rmSync, writeSync, closeSync } from '
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { networkInterfaces } from 'node:os';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,13 +52,14 @@ function record(id, title, ok, detail) {
   console.log(`  ${mark}  ${id}  ${title}${detail ? `\n        ${detail}` : ''}`);
 }
 
-function lanAddress() {
-  for (const addresses of Object.values(networkInterfaces())) {
-    for (const a of addresses ?? []) {
-      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) return a.address;
-    }
-  }
-  return null;
+/**
+ * The built server, imported once.
+ *
+ * `pathToFileURL`, not the bare path: an absolute Windows path looks like a URL with an `e:`
+ * scheme to the ESM loader, which refuses it.
+ */
+async function serverModule() {
+  return import(pathToFileURL(join(ROOT, 'apps/server/dist/index.js')).href);
 }
 
 /**
@@ -101,7 +101,12 @@ function makeMkv(dir) {
 }
 
 async function main() {
-  const lan = lanAddress();
+  // The server's own address picker, not a second copy of it here. This harness used to take
+  // the first non-loopback address the OS listed, which on a machine with a VPN running is the
+  // tunnel — so the run would report failures that were only ever the harness knocking on an
+  // address nothing answers at.
+  const { createServer, lanIpv4Addresses } = await serverModule();
+  const lan = lanIpv4Addresses()[0] ?? null;
   if (!lan) {
     console.error('No LAN address on this machine; nothing here can be checked.');
     process.exit(1);
@@ -116,9 +121,6 @@ async function main() {
   const big = makeSparseFixture(share);
   makeMkv(share);
 
-  // pathToFileURL, not the bare path: an absolute Windows path looks like a URL with an `e:`
-  // scheme to the ESM loader, which refuses it.
-  const { createServer } = await import(pathToFileURL(join(ROOT, 'apps/server/dist/index.js')).href);
   const server = await createServer({
     dataDir: join(work, 'data'),
     edgeSecret: randomBytes(32).toString('hex'),
