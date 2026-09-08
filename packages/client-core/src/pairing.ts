@@ -58,6 +58,15 @@ function fromPairingUrl(text: string): QrPayload {
 
   if (!code) throw invalid('that link has no pairing code in it');
 
+  // The same rule the JSON form is held to: HTTPS anywhere, plaintext only on a local address.
+  // A link is the easiest of the two forms to hand somebody, so it is the one that most needs
+  // to refuse `http://somewhere-on-the-internet`.
+  if (!isUsableOrigin(url.origin)) {
+    throw invalid('this pairing link points at an address LocalCast cannot use', {
+      fields: ['url'],
+    });
+  }
+
   return qrPayloadSchema.parse({
     v: 1,
     host: url.hostname,
@@ -114,12 +123,32 @@ export function parseQrPayload(raw: string): QrPayload {
   return result.data;
 }
 
+/** `10/8`, `172.16/12`, `192.168/16`, loopback, link-local — plus `localhost` and `*.local`. */
+function isLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+  if (!IPV4.test(host)) return false;
+  return (
+    host.startsWith('127.') ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.') ||
+    host.startsWith('169.254.') ||
+    /^172\.(?:1[6-9]|2\d|3[01])\./.test(host)
+  );
+}
+
 /**
- * A local-network origin: `https://` and nothing else.
+ * An origin a pairing payload may point a client at.
  *
- * `http://` is refused outright rather than downgraded to a warning. The whole point of this
- * field is that the local network is encrypted now, and a payload offering a plain-HTTP origin
- * is either an old server or someone trying to talk a client out of TLS.
+ * `https://` anywhere, and `http://` **only for an address on the local network**.
+ *
+ * The asymmetry is the point. Plaintext exists in this product as one deliberate, switchable
+ * fallback for a device that cannot get past a self-signed certificate's interstitial, and that
+ * fallback lives at `http://192.168.x.y:8421` — so refusing plaintext outright would refuse the
+ * very address the operator turned on. But `http://` to a routable host is a different thing
+ * entirely: nothing in LocalCast ever mints one, so a payload carrying one is either a server
+ * from before this rule or somebody trying to talk a client out of TLS on the open internet.
+ * That is refused, and the local case is not.
  */
 export function isUsableOrigin(value: string): boolean {
   let parsed: URL;
@@ -128,7 +157,9 @@ export function isUsableOrigin(value: string): boolean {
   } catch {
     return false;
   }
-  if (parsed.protocol !== 'https:') return false;
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLocalHostname(parsed.hostname))) {
+    return false;
+  }
   if (parsed.username !== '' || parsed.password !== '') return false;
   // A pairing origin names a server, not a page on one.
   if (parsed.search !== '' || parsed.hash !== '') return false;
@@ -179,7 +210,18 @@ export async function runPairing(options: PairingOptions): Promise<StoredSession
   } = options;
 
   const payload = typeof options.qr === 'string' ? parseQrPayload(options.qr) : options.qr;
-  if (!isPairableHost(payload.host)) {
+  /**
+   * The host is only checked when there is no explicit origin to use instead.
+   *
+   * `isPairableHost` refuses a bare IP, and correctly so for the field it was written for:
+   * `host` is a MagicDNS name, and a name that cannot hold a public certificate cannot be
+   * reached over the tailnet. But a local-network payload puts `192.168.8.92` in `host` and the
+   * address it actually wants in `url` — so this check, applied unconditionally, rejected every
+   * pairing link a phone's camera ever opened. `parseQrPayload` already had the conditional
+   * form; this one did not, which is why scanning appeared to work and then sent the user back
+   * to typing the four characters by hand.
+   */
+  if (payload.url === undefined && !isPairableHost(payload.host)) {
     throw invalid('this pairing code points at an address LocalCast cannot use', {
       fields: ['host'],
     });

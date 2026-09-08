@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ErrorCode } from '@localcast/contract';
 import { ApiClient } from '../api.js';
 import { CancelledError, LocalCastError } from '../errors.js';
-import { isPairableHost, parseQrPayload, runPairing } from '../pairing.js';
+import { isPairableHost, isUsableOrigin, parseQrPayload, runPairing } from '../pairing.js';
 import { SessionManager } from '../session.js';
 import type { Handler } from './fakes.js';
 import { BASE_URL, FakeClock, FakeTransport, json, MemoryTokenStore } from './fakes.js';
@@ -131,6 +131,35 @@ describe('QR validation', () => {
     expect(isPairableHost('10.0.0.1')).toBe(false);
     expect(isPairableHost('fe80::1')).toBe(false);
   });
+
+  it.each([
+    ['https to a tailnet name', 'https://ali-pc.tail1234.ts.net', true],
+    ['https to a bare LAN address with a port', 'https://192.168.8.92:8420', true],
+    // The one plaintext case the product actually mints: the switchable fallback listener, for a
+    // device that cannot get past a self-signed certificate's interstitial.
+    ['http to a LAN address', 'http://192.168.8.92:8421', true],
+    ['http to 10.x', 'http://10.0.0.14:8421', true],
+    ['http to a .local name', 'http://sadra.local:8421', true],
+    ['http to loopback', 'http://127.0.0.1:8421', true],
+    // Nothing in LocalCast ever mints these, so a payload carrying one is either an old server
+    // or somebody trying to talk a client out of TLS on a network it does not control.
+    ['http to a routable host', 'http://example.com', false],
+    ['http to a public address', 'http://203.0.113.10:8421', false],
+    ['an origin carrying credentials', 'https://user:pw@192.168.8.92:8420', false],
+    ['an origin with a path', 'https://192.168.8.92:8420/pair', false],
+    ['not a URL at all', 'nonsense', false],
+  ])('isUsableOrigin — %s', (_why, origin, expected) => {
+    expect(isUsableOrigin(origin)).toBe(expected);
+  });
+
+  it('refuses a pairing link that would send the phone somewhere plaintext on the internet', () => {
+    // A link is the easiest of the two payload forms to hand somebody, so it is the one that
+    // most needs this. The fragment is a perfectly well-formed pairing fragment; the origin is
+    // the problem.
+    expect(() => parseQrPayload(`http://evil.example.com/#p=WJG6.${'s'.repeat(43)}`)).toThrowError(
+      LocalCastError,
+    );
+  });
 });
 
 describe('pairing flow', () => {
@@ -169,6 +198,63 @@ describe('pairing flow', () => {
     // Gentle backoff: the operator is watching the phone while approving.
     expect(delays).toEqual([800, 1_200]);
     expect(Math.max(...delays)).toBeLessThanOrEqual(5_000);
+  });
+
+  it('pairs from a link a phone camera opened, whose host is a bare LAN address', async () => {
+    /**
+     * The bug the whole scanning path died on.
+     *
+     * `runPairing` ran `isPairableHost(payload.host)` unconditionally. A pairing link puts the
+     * address it was opened at in `host` — `192.168.8.92` — and `isPairableHost` refuses a bare
+     * IP, correctly, for the field it was written for: `host` is a MagicDNS name and a bare IP
+     * can never hold a public certificate. But a local-network payload carries the address it
+     * actually wants in `url`, and this check ignored that. So every scan claimed nothing, the
+     * screen fell back to the four-character form, and pairing by camera looked like it had
+     * simply been left unimplemented.
+     */
+    const { api, clock } = client((request) =>
+      request.url.includes('/pair/claim')
+        ? json(200, { deviceId: 'dev-9', claimTicket: 'ticket-1', status: 'pending' })
+        : json(200, APPROVED),
+    );
+
+    const phases: string[] = [];
+    const paired = await runPairing({
+      api,
+      clock,
+      qr: `https://192.168.8.92:8420/#p=WJG6.${SECRET}`,
+      deviceName: 'iPhone',
+      platform: 'ios-pwa',
+      onPhase: (phase) => phases.push(phase),
+    });
+
+    expect(paired.deviceId).toBe('dev-9');
+    // Carried into the session, so a reconnect goes back to the same origin rather than guessing
+    // `https://<host>` and landing on port 443.
+    expect(paired.baseUrl).toBe('https://192.168.8.92:8420');
+    expect(paired.host).toBe('192.168.8.92');
+    // Both phases reported, because they feel nothing alike: one is instant, the other lasts as
+    // long as it takes somebody to walk to the computer.
+    expect(phases).toEqual(['claiming', 'waiting-for-approval']);
+  });
+
+  it('still refuses a bare IP when the payload offers no origin to use instead', async () => {
+    // The check was not wrong, only unconditional. A payload with an IP in `host` and no `url`
+    // is a tailnet payload naming something that cannot be reached over the tailnet, and it must
+    // still be refused — the claim must not even be sent.
+    const { api, clock, transport } = client(() => json(200, APPROVED));
+
+    await expect(
+      runPairing({
+        api,
+        clock,
+        qr: { v: 1, host: '192.168.8.92', code: 'WJG6', secret: SECRET },
+        deviceName: 'iPhone',
+        platform: 'ios-pwa',
+      }),
+    ).rejects.toThrowError(LocalCastError);
+
+    expect(transport.matching('/pair/claim')).toHaveLength(0);
   });
 
   it('sends the claim ticket with every poll', async () => {

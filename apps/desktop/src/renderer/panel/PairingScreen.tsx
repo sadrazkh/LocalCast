@@ -19,6 +19,7 @@ import { messageOf } from '../lib/useAsync.js';
 import { REMOTE_ACCESS_ENABLED } from '../../shared/features.js';
 import { useLibrary } from '../state/library.js';
 import { useShell } from '../state/shell.js';
+import { LanShareCard } from './LanShareCard.js';
 import styles from './PairingScreen.module.css';
 
 /** The operator API mints with a five-minute TTL; the meter needs the same number. */
@@ -144,18 +145,12 @@ export function PairingScreen() {
               {REMOTE_ACCESS_ENABLED && status?.funnelUrl ? (
                 <AddressField host={status.funnelUrl} label={t('network.publicAddress')} />
               ) : null}
-              {info?.lanUrl ? (
-                <>
-                  <AddressField host={info.lanUrl} label={c('pairing.lanAddress')} />
-                  {/*
-                    The warning is named before it happens, in one sentence, with no jargon.
-                    The connection is protected by this computer rather than by an outside
-                    company, so the phone asks once whether to trust it — and a person who
-                    meets that screen unprepared reads it as "something is wrong" and stops.
-                  */}
-                  <p className={styles.trustNote}>{c('pairing.trustOnce')}</p>
-                </>
-              ) : null}
+              {/*
+                The Wi-Fi address, and — when there is not one — which of the three reasons is
+                why. It used to be a bare field that went blank for all three, including the one
+                whose cause is another copy of this app still running in the system tray.
+              */}
+              <LanShareCard />
             </div>
 
             <section className={styles.defaults}>

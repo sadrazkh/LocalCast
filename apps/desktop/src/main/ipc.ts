@@ -2,7 +2,13 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import QRCode from 'qrcode';
 import { networkConfigSchema, type EdgeStatus, type NetworkConfig } from '@localcast/contract';
 import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
-import { IPC, type AppInfo, type PairingMintResult, type RedactedNetworkConfig } from '../shared/ipc.js';
+import {
+  IPC,
+  type AppInfo,
+  type LanShareStatus,
+  type PairingMintResult,
+  type RedactedNetworkConfig,
+} from '../shared/ipc.js';
 import type { NetEdge } from './netedge.js';
 import type { OperatorClient } from './operatorClient.js';
 import type { AppConfigStore } from './appConfig.js';
@@ -30,6 +36,12 @@ export interface IpcDeps {
   serverPort: () => number;
   /** The local-network origin and its certificate fingerprint; both null until the server is up. */
   lanEndpoint: () => { url: string | null; fingerprint: string | null };
+  /** The full local-sharing picture, including why it is unavailable when it is. */
+  lanStatus: () => LanShareStatus;
+  /** Re-read this machine's addresses without waiting for the next poll. */
+  refreshLanAddress: () => boolean;
+  /** Store the user's choice and apply it to the running server. */
+  setLanEncrypted: (encrypted: boolean) => Promise<LanShareStatus>;
   restartEdge: (config: NetworkConfig) => Promise<EdgeStatus>;
 }
 
@@ -213,6 +225,18 @@ export function registerIpc(deps: IpcDeps): void {
     }),
   );
 
+  // ── local network ──────────────────────────────────────────────────────────
+  // No guard on any of these: local sharing is the default path, needs no account and no
+  // sidecar, and stays fully available while remote access is switched off.
+  ipcMain.handle(IPC.lanStatus, () => deps.lanStatus());
+  ipcMain.handle(IPC.lanRefresh, () => deps.refreshLanAddress());
+  ipcMain.handle(IPC.lanSetEncrypted, (_e, encrypted: unknown) => {
+    // Validated rather than trusted: this is the call that decides whether the Wi-Fi traffic is
+    // readable by everyone else on it, and a truthy string must not be able to turn it off.
+    if (typeof encrypted !== 'boolean') throw new Error('expected a boolean');
+    return deps.setLanEncrypted(encrypted);
+  });
+
   // ── printers ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.printersList, () => operator().get('/printers'));
   ipcMain.handle(IPC.printersRefresh, () => operator().post('/printers/refresh'));
@@ -240,6 +264,7 @@ export function registerIpc(deps: IpcDeps): void {
       serverPort: deps.serverPort(),
       lanUrl: lan.url,
       lanFingerprint: lan.fingerprint,
+      lan: deps.lanStatus(),
       locale: cfg.locale,
       setupComplete: cfg.setupComplete,
     };

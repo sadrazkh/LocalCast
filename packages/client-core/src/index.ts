@@ -5,6 +5,7 @@ import { EventClient, TransportSseChannel } from './events.js';
 import type { SseChannel } from './events.js';
 import { OfflineCache } from './offline.js';
 import { runPairing } from './pairing.js';
+import type { PairingPhase } from './pairing.js';
 import type { CacheStore, Clock, HttpTransport, Logger, StoredSession, TokenStore } from './ports.js';
 import { SessionManager } from './session.js';
 
@@ -50,6 +51,14 @@ export interface PairInput {
   deviceName: string;
   platform: Platform;
   signal?: AbortSignal;
+  /**
+   * Claim submitted, now waiting on the operator.
+   *
+   * Worth reporting because the two phases feel completely different: claiming is instant, and
+   * waiting can last as long as it takes somebody to walk to the computer. A screen that says
+   * «در حال اتصال…» for both leaves the second one looking like a hang.
+   */
+  onPhase?: (phase: PairingPhase) => void;
 }
 
 export interface LocalCastClient {
@@ -140,6 +149,7 @@ export function createClient(options: CreateClientOptions): LocalCastClient {
         deviceName: input.deviceName,
         platform: input.platform,
         signal: input.signal,
+        ...(input.onPhase === undefined ? {} : { onPhase: input.onPhase }),
       });
       await session.adopt(paired);
       return paired;

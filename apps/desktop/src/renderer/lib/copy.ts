@@ -113,6 +113,19 @@ export const copy = {
     'pairing.trustOnce':
       'بار اول، گوشی می‌پرسد که آیا به این رایانه اعتماد می‌کنید. «بله» را بزنید؛ همین رایانهٔ خودتان است و فقط یک بار پرسیده می‌شود.',
 
+    // ── local network sharing ──────────────────────────────────────────────────────
+    'lan.encryptedLabel': 'ارتباط رمزنگاری‌شده',
+    'lan.encryptedHint':
+      'روشن باشد. اگر گوشی یا تلویزیونی هست که هیچ‌جوره از صفحهٔ هشدار گواهی رد نمی‌شود، فقط برای همان خاموشش کنید.',
+    // Not softened. On a shared Wi-Fi this is readable by everyone else on it, and the person who
+    // turned the switch off is the person who needs to be told what they turned off.
+    'lan.unencryptedWarning':
+      'این نشانی رمزنگاری‌شده نیست. هر کسی که روی همین وای‌فای باشد می‌تواند فایل‌ها و رمز دسترسی دستگاه‌ها را بخواند. اگر لازم نیست، رمزنگاری را روشن کنید.',
+    'lan.noAddress':
+      'این رایانه هنوز روی هیچ شبکهٔ محلی نشانی ندارد. وای‌فای یا کابل شبکه را بررسی کنید؛ به‌محض وصل شدن، نشانی خودش اینجا می‌آید.',
+    'lan.failed': 'اشتراک روی شبکهٔ محلی شروع نشد.',
+    'lan.recheck': 'بررسی دوباره',
+
     // ── settings (screen 14) ───────────────────────────────────────────────────────
     'settings.level.info': 'اطلاع',
     'settings.level.warn': 'هشدار',
@@ -261,6 +274,16 @@ export const copy = {
     'pairing.lanAddress': 'Address on this Wi-Fi',
     'pairing.trustOnce':
       'The first time it connects, your phone will ask whether to trust this computer. Say yes — it means this computer, and it only asks once.',
+
+    'lan.encryptedLabel': 'Encrypted connection',
+    'lan.encryptedHint':
+      'Leave this on. Turn it off only for a device that will not get past the certificate warning at all.',
+    'lan.unencryptedWarning':
+      'This address is not encrypted. Anyone else on this Wi-Fi can read the files and the devices’ access tokens. Turn encryption back on unless you need it off.',
+    'lan.noAddress':
+      'This computer has no address on a local network yet. Check the Wi-Fi or the network cable — the address appears here as soon as it connects.',
+    'lan.failed': 'Sharing on the local network did not start.',
+    'lan.recheck': 'Check again',
 
     'settings.level.info': 'Note',
     'settings.level.warn': 'Warning',

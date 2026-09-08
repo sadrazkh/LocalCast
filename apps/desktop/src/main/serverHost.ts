@@ -43,19 +43,52 @@ export interface ServerHostOptions {
   lanAddress: string;
 }
 
+/**
+ * Whether local sharing is working, mirrored from the server so the desktop does not have to
+ * import the server's types. See `LanStatus` in `@localcast/server`.
+ */
+export interface LanShareStatus {
+  state: 'off' | 'listening' | 'no-address' | 'failed';
+  url: string | null;
+  fingerprint256: string | null;
+  encrypted: boolean;
+  securePort: number | null;
+  plaintextPort: number | null;
+  error: string | null;
+}
+
 export interface ServerHandle {
   /** The loopback HTTP port. This is what `netedge` proxies to and the operator API uses. */
   port: number;
   /**
-   * `https://192.168.1.50:8443` — where a device on the same Wi-Fi connects. Null when local
+   * `https://192.168.1.50:8420` — where a device on the same Wi-Fi connects. Null when local
    * sharing is off, or when this machine has no address on a local network.
+   *
+   * A **function**, not a field. It was a field, read once when the server came up, and that is
+   * why the address in the panel and in the QR code was wrong after anything ordinary happened to
+   * the machine's network: a laptop that started before Wi-Fi associated reported no address for
+   * the rest of the session, and a DHCP lease moving left the old one on screen.
    */
-  lanUrl: string | null;
+  lanUrl(): string | null;
   /**
    * SHA-256 of the certificate that origin presents, uppercase colon-separated hex. Shown in
    * the panel and carried in the QR code so a native client can pin it.
    */
-  lanFingerprint: string | null;
+  lanFingerprint(): string | null;
+  /** The full picture, including why sharing is unavailable when it is. */
+  lanStatus(): LanShareStatus;
+  /** Re-read this machine's addresses now. True when something changed. */
+  refreshLanAddress(): boolean;
+  /** Open or close the unencrypted listener. Takes effect immediately; nothing restarts. */
+  setLanPlaintext(enabled: boolean): Promise<LanShareStatus>;
+  /**
+   * Every server event, unfiltered, in-process.
+   *
+   * This is how the main process learns that a device is waiting to be approved. The alternative
+   * was polling the operator API, or an SSE route — and the SSE route is device-scoped by design,
+   * so the operator could not have used it. Returns an unsubscribe function.
+   */
+  onEvent(handler: (event: { type: string; [key: string]: unknown }) => void): () => void;
   /**
    * Publishes the MagicDNS name once `netedge` knows it.
    *
@@ -82,8 +115,12 @@ export class ServerNotBuilt extends Error {
 interface ServerModuleShape {
   createServer(options: Record<string, unknown>): Promise<{
     config: { publicHost: string };
+    ctx: { events: { observe(handler: (event: { type: string }) => void): () => void } };
     listen(port?: number): Promise<AddressInfo>;
     lanEndpoint(): { url: string; fingerprint256: string } | null;
+    lanStatus(): LanShareStatus;
+    refreshLanAddress(): boolean;
+    setLanPlaintext(enabled: boolean): Promise<LanShareStatus>;
     dispose(): Promise<void>;
   }>;
 }
@@ -122,14 +159,17 @@ export async function startServer(options: ServerHostOptions): Promise<ServerHan
   });
 
   const address = await instance.listen();
-  // Read after `listen`, never before: the LAN listener's port is assigned by the OS, and the
-  // URL is not knowable until it is bound.
-  const lan = instance.lanEndpoint();
 
   return {
     port: address.port,
-    lanUrl: lan?.url ?? null,
-    lanFingerprint: lan?.fingerprint256 ?? null,
+    // Asked each time, never captured. The address is not a fact that holds still — see the
+    // comment on `ServerHandle.lanUrl`.
+    lanUrl: () => instance.lanEndpoint()?.url ?? null,
+    lanFingerprint: () => instance.lanEndpoint()?.fingerprint256 ?? null,
+    lanStatus: () => instance.lanStatus(),
+    refreshLanAddress: () => instance.refreshLanAddress(),
+    setLanPlaintext: (enabled: boolean) => instance.setLanPlaintext(enabled),
+    onEvent: (handler) => instance.ctx.events.observe(handler as (e: { type: string }) => void),
     setPublicHost(host: string) {
       instance.config.publicHost = host;
     },

@@ -31,6 +31,11 @@
 | A control-plane switch reconfigures the running sidecar rather than restarting it | `apps/desktop/src/main/netedge.ts` (`applyConfig`), `native/netedge/internal/edge/edge.go` (`Edge.Apply`) | `apps/desktop/src/main/__tests__/netedge.switch.test.ts` — no Go binary needed, so it holds on every checkout; `modeSwitch.test.ts` proves the same thing against the real sidecar but **skips when `netedge.exe` has not been built** |
 | The LAN listener speaks TLS, and loopback still demands the edge secret | `apps/server/src/index.ts`, `apps/server/src/auth/middleware.ts` | `apps/server/test/lan.test.ts` |
 | The address published to devices is the machine's real network adapter, never a VPN tunnel or a virtual switch — whether or not the VPN is running | `apps/server/src/net/lanAddress.ts` | `apps/server/test/lanAddress.test.ts` |
+| The published address follows the machine: Wi-Fi coming up late, a DHCP lease moving, a VPN toggling, Ethernet being plugged in | `apps/server/src/net/lanPublisher.ts` | `apps/server/test/lanPublisher.test.ts` |
+| The local network is **encrypted by default**; plaintext is an explicit switch, and turning it on is what changes the published address | `apps/desktop/src/main/appConfig.ts`, `apps/server/src/index.ts` (`setLanPlaintext`) | `apps/server/test/lanResilience.test.ts` |
+| A busy port costs local sharing and nothing else — the panel and the operator API still come up, and say why | `apps/server/src/index.ts` (`bindPreferring`, `lanStatus`) | `apps/server/test/lanResilience.test.ts` |
+| A device that claims a pairing code produces a notification and a prompt the operator can answer | `apps/desktop/src/main/pairingPrompt.ts` | `apps/desktop/src/main/__tests__/pairingPrompt.test.ts` |
+| A scanned pairing link pairs end to end, on a bare LAN address, through the real client | `packages/client-core/src/pairing.ts` | `apps/server/test/pairingEndToEnd.test.ts` |
 
 ## The offline test, and why it is written the way it is
 

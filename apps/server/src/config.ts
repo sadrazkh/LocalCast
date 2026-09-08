@@ -93,6 +93,15 @@ export interface ServerConfig {
   lanPlaintext: boolean;
   /** Port for the unencrypted listener. Separate socket, so it can never share TLS state. */
   lanPlaintextPort: number;
+  /**
+   * How often to re-read this machine's network addresses, in milliseconds. 0 uses the default.
+   *
+   * The address is not a fact that holds still: a laptop starts before its Wi-Fi associates, DHCP
+   * leases move, VPNs come and go, somebody plugs in Ethernet. Each of those used to leave the
+   * published address wrong for the rest of the session, which is what "it is not stable"
+   * described. A test sets this small so it does not have to wait.
+   */
+  lanWatchIntervalMs: number;
   logLevel: LogLevel;
 }
 
@@ -156,6 +165,7 @@ export function loadConfig(overrides: ServerConfigOverrides = {}): ServerConfig 
     // must never imply sharing it unencrypted.
     lanPlaintext: overrides.lanPlaintext ?? false,
     lanPlaintextPort: overrides.lanPlaintextPort ?? DEFAULT_LAN_PLAINTEXT_PORT,
+    lanWatchIntervalMs: overrides.lanWatchIntervalMs ?? 0,
     logLevel: overrides.logLevel ?? 'info',
   };
 }

@@ -54,6 +54,11 @@ export const IPC = {
   printersRefresh: 'printers:refresh',
   printerSetEnabled: 'printer:set-enabled',
 
+  // local network
+  lanStatus: 'lan:status',
+  lanRefresh: 'lan:refresh',
+  lanSetEncrypted: 'lan:set-encrypted',
+
   // app
   activityList: 'activity:list',
   appInfo: 'app:info',
@@ -64,6 +69,19 @@ export const IPC = {
   updateInstall: 'update:install',
   updateProgress: 'update:progress',
 } as const;
+
+/** Mirrors the server's `LanStatus`; see `apps/server/src/index.ts`. */
+export interface LanShareStatus {
+  state: 'off' | 'listening' | 'no-address' | 'failed';
+  url: string | null;
+  fingerprint256: string | null;
+  /** False when the address being published is the unencrypted listener's. */
+  encrypted: boolean;
+  securePort: number | null;
+  plaintextPort: number | null;
+  /** A sentence naming the cause, set only when `state` is `failed`. */
+  error: string | null;
+}
 
 export interface AppInfo {
   version: string;
@@ -84,6 +102,14 @@ export interface AppInfo {
    * way a suspicious person can check the two match.
    */
   lanFingerprint: string | null;
+  /**
+   * Why local sharing is not working, when it is not.
+   *
+   * A null `lanUrl` used to mean three different things at once — switched off, no address on
+   * this machine yet, could not bind a port — and the panel could only say "no address", which
+   * is unhelpful in two of the three cases and wrong in one.
+   */
+  lan: LanShareStatus;
   locale: 'fa' | 'en';
   /** False until the first-run wizard has been completed once. */
   setupComplete: boolean;
@@ -161,6 +187,26 @@ export interface DesktopApi {
   pairing: {
     mint(defaults: { folderId: string; mode: string }[]): Promise<PairingMintResult>;
     qrDataUrl(payload: string): Promise<string>;
+  };
+  /**
+   * Local-network sharing, which is the default path and the one that needs no account.
+   *
+   * Separate from `edge`, which is remote access. Nothing here touches the sidecar, needs a
+   * coordination server or leaves the Wi-Fi, so it stays reachable while `REMOTE_ACCESS_ENABLED`
+   * is false.
+   */
+  lan: {
+    status(): Promise<LanShareStatus>;
+    /** Re-read this machine's addresses now. True when something changed. */
+    refresh(): Promise<boolean>;
+    /**
+     * Turn encryption on the local network on or off.
+     *
+     * On is the default. Off exists for a device that cannot get past a self-signed certificate at
+     * all, and it takes effect immediately — the encrypted listener keeps its socket either way,
+     * only the advertised address changes.
+     */
+    setEncrypted(encrypted: boolean): Promise<LanShareStatus>;
   };
   printers: {
     list(): Promise<Printer[]>;

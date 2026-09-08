@@ -75,6 +75,9 @@ vi.mock('electron', () => ({
       if (event === 'activate') h.finished.resolve();
     },
     whenReady: () => Promise.resolve(),
+    // Windows will not show a toast from a process it cannot attribute to an installed app, so
+    // bootstrap sets this. Absent from the double, it threw and took startup down with it.
+    setAppUserModelId: () => {},
     getPath: (name: string) =>
       name === 'appData' ? h.paths.appData : name === 'exe' ? h.paths.exe : h.paths.temp,
     getAppPath: () => h.paths.appPath,
@@ -90,9 +93,17 @@ vi.mock('electron', () => ({
     },
   },
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
+  Notification: class {
+    static isSupported(): boolean {
+      return false;
+    }
+    on() {}
+    show() {}
+  },
   dialog: {
     showErrorBox: (title: string, body: string) => h.fatal.push(`${title}: ${body}`),
     showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    showMessageBox: () => Promise.resolve({ response: 1 }),
   },
   ipcMain: { handle: () => {}, on: () => {} },
   shell: { openExternal: () => Promise.resolve() },
@@ -138,8 +149,23 @@ vi.mock('../serverHost.js', () => ({
     h.serverOptions.push(options);
     return Promise.resolve({
       port: 45999,
-      lanUrl: 'https://192.168.1.50:8443',
-      lanFingerprint: 'AA:BB',
+      // Functions, not fields. The address follows the machine now, so nothing may capture it.
+      lanUrl: () => 'https://192.168.1.50:8420',
+      lanFingerprint: () => 'AA:BB',
+      lanStatus: () => ({
+        state: 'listening',
+        url: 'https://192.168.1.50:8420',
+        fingerprint256: 'AA:BB',
+        encrypted: true,
+        securePort: 8420,
+        plaintextPort: null,
+        error: null,
+      }),
+      refreshLanAddress: () => false,
+      setLanPlaintext: () => Promise.resolve({}),
+      // Where the pairing prompt subscribes. A no-op unsubscribe is enough here: this file
+      // watches the process spawn, and nothing in it publishes a server event.
+      onEvent: () => () => {},
       setPublicHost: () => {},
       dispose: () => Promise.resolve(),
     });

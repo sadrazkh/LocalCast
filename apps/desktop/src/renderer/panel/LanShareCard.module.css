@@ -1,0 +1,39 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-3);
+}
+
+.note {
+  margin: 0;
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-xs);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* A problem the user can act on, so it reads as a message rather than as a missing field. */
+.problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-1);
+  margin: 0;
+  padding: var(--lc-space-3);
+  border: 1px solid var(--lc-border-warning, var(--lc-border));
+  border-radius: var(--lc-radius-md);
+  background: var(--lc-surface-2);
+  color: var(--lc-text);
+  font-size: var(--lc-fs-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.detail {
+  color: var(--lc-text-muted);
+  font-size: var(--lc-fs-xs);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-start;
+}

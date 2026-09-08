@@ -62,11 +62,37 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     return off;
   }, []);
 
+  /**
+   * `app.info()` is re-read on a timer as well as on demand.
+   *
+   * It used to be fetched once. That was fine while everything in it was fixed at boot, and it
+   * stopped being fine when the local-network address became something that follows the machine:
+   * a laptop that starts before its Wi-Fi associates, a DHCP lease moving, a VPN coming up. The
+   * panel would keep showing whatever was true in the first second of the session.
+   *
+   * `setInfo` only fires when the payload actually differs, so a quiet machine re-renders nothing
+   * — this is a poll for a change, not a heartbeat that repaints the screen every few seconds.
+   */
   useEffect(() => {
-    void getApi()
-      .app.info()
-      .then(setInfo)
-      .catch(() => undefined);
+    let cancelled = false;
+    const read = (): void => {
+      void getApi()
+        .app.info()
+        .then((next) => {
+          if (cancelled) return;
+          setInfo((current) =>
+            current !== null && JSON.stringify(current) === JSON.stringify(next) ? current : next,
+          );
+        })
+        .catch(() => undefined);
+    };
+
+    read();
+    const timer = window.setInterval(read, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [infoNonce]);
 
   // Uptime is measured from when this window first saw the server on, and reset when it goes

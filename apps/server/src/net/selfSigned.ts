@@ -106,7 +106,10 @@ const DNS_NAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z
  * does not require a new build. Everything after that is `lanAddress.ts`'s ranking, which puts
  * the real network adapter ahead of any VPN tunnel.
  */
-export function defaultSanHosts(extra: readonly string[] = []): string[] {
+export function defaultSanHosts(
+  extra: readonly string[] = [],
+  interfaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
+): string[] {
   const hosts = ['localhost', '127.0.0.1'];
   for (const host of extra) {
     const normalised = host.trim().toLowerCase();
@@ -117,7 +120,7 @@ export function defaultSanHosts(extra: readonly string[] = []): string[] {
     hosts.push(hostname);
     if (!hostname.includes('.')) hosts.push(`${hostname}.local`);
   }
-  hosts.push(...lanIpv4Addresses());
+  hosts.push(...lanIpv4Addresses(interfaces));
   return [...new Set(hosts)].filter((host) => IPV4.test(host) || DNS_NAME.test(host));
 }
 
@@ -268,6 +271,12 @@ export interface EnsureOptions {
   extraHosts?: readonly string[];
   now?: number;
   log?: Logger;
+  /**
+   * The machine's interface table. Injected by `LanPublisher` so that re-issuing after a network
+   * change reads the same table the change was detected from — and so a test can move a machine
+   * between networks without touching the host it runs on.
+   */
+  interfaces?: ReturnType<typeof os.networkInterfaces>;
 }
 
 /**
@@ -281,7 +290,7 @@ export interface EnsureOptions {
  */
 export function ensureLanCertificate(options: EnsureOptions): LanCertificate {
   const now = options.now ?? Date.now();
-  const hosts = defaultSanHosts(options.extraHosts ?? []);
+  const hosts = defaultSanHosts(options.extraHosts ?? [], options.interfaces ?? os.networkInterfaces());
   const keyPath = path.join(options.dir, KEY_FILE);
   const certPath = path.join(options.dir, CERT_FILE);
 

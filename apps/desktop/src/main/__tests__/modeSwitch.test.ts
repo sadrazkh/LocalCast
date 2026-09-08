@@ -225,6 +225,11 @@ async function startHarness(edge: EdgeStub): Promise<Harness> {
     version: '0.0.0-test',
     serverPort: () => addr.port,
     lanEndpoint: () => ({ url: null, fingerprint: null }),
+    // This file is about switching control planes; local sharing is off in its server, so these
+    // answer the way `index.ts` answers before the server handle exists.
+    lanStatus: () => server.lanStatus(),
+    refreshLanAddress: () => server.refreshLanAddress(),
+    setLanEncrypted: (encrypted: boolean) => server.setLanPlaintext(!encrypted),
     // Wired exactly as apps/desktop/src/main/index.ts wires it.
     restartEdge: async (config: NetworkConfig) => {
       restarts.push(config);

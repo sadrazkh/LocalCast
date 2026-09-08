@@ -43,6 +43,9 @@ const IPC = {
   devicePermissions: 'device:permissions',
   pairingMint: 'pairing:mint',
   pairingQrDataUrl: 'pairing:qr-data-url',
+  lanStatus: 'lan:status',
+  lanRefresh: 'lan:refresh',
+  lanSetEncrypted: 'lan:set-encrypted',
   printersList: 'printers:list',
   printersRefresh: 'printers:refresh',
   printerSetEnabled: 'printer:set-enabled',
@@ -97,6 +100,11 @@ const api = {
   pairing: {
     mint: (defaults: unknown) => ipcRenderer.invoke(IPC.pairingMint, defaults),
     qrDataUrl: (payload: string) => ipcRenderer.invoke(IPC.pairingQrDataUrl, payload),
+  },
+  lan: {
+    status: () => ipcRenderer.invoke(IPC.lanStatus),
+    refresh: () => ipcRenderer.invoke(IPC.lanRefresh),
+    setEncrypted: (encrypted: boolean) => ipcRenderer.invoke(IPC.lanSetEncrypted, encrypted),
   },
   printers: {
     list: () => ipcRenderer.invoke(IPC.printersList),

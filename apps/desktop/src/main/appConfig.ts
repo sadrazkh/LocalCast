@@ -29,17 +29,20 @@ const appConfigSchema = z.object({
   /**
    * Serve the local network without TLS.
    *
-   * On by default **for now**, and that is a deliberate, temporary trade the owner asked for
-   * so the rest of the product can be tested at all. The encrypted listener is real and keeps
-   * running; the problem is what a phone does when it meets a certificate no authority signed.
-   * It shows an interstitial, and an interstitial is not the app — so a scanned link stops
-   * there and pairing never happens. Every symptom of that looked like a different bug.
+   * **Off.** It was briefly on by default, as a way to get past a certificate interstitial while
+   * the rest of pairing was being made to work, and that trade has been paid back: the reason a
+   * scanned link never became a paired device was a client-side check that refused every bare IP
+   * address, not the certificate. With that fixed there is nothing left for plaintext to buy, and
+   * on a shared Wi-Fi an unencrypted origin hands every bearer token and every byte of every file
+   * to whoever else is on the network.
    *
-   * The cost is stated on screen rather than buried here: on a shared Wi-Fi an unencrypted
-   * origin is readable by everyone else on it. This flips back to false once the certificate
-   * path has been tried on real phones and the trust step is something a person can complete.
+   * It stays as a switch rather than being deleted, because some devices genuinely cannot get
+   * past a self-signed certificate at all — an embedded webview with no "proceed" affordance, a
+   * device under a managed configuration profile. For those the choice is plaintext or nothing,
+   * and it is the operator's to make, from the panel, with the cost on screen. Flipping it takes
+   * effect immediately; nothing restarts.
    */
-  shareOnLanUnencrypted: z.boolean().default(true),
+  shareOnLanUnencrypted: z.boolean().default(false),
   /**
    * Force the address published to devices, instead of detecting it.
    *

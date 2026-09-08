@@ -26,8 +26,9 @@ import { FsFileResolver } from './library/resolver.js';
 import { createLogger } from './logger.js';
 import { buildLanAccess, type LanAccess } from './net/lanAccess.js';
 import { lanCandidates } from './net/lanAddress.js';
+import { LanPublisher } from './net/lanPublisher.js';
 import { createPlaintextListener } from './net/plaintext.js';
-import { ensureLanCertificate, type LanCertificate } from './net/selfSigned.js';
+import type { LanCertificate } from './net/selfSigned.js';
 
 export const OPERATOR_PREFIX = '/operator';
 
@@ -69,7 +70,40 @@ export interface LocalCastServer {
   lanEndpoint(): LanEndpoint | null;
   /** The certificate the LAN listener presents, for the panel and for logs. */
   lanCertificate(): LanCertificate | null;
+  /**
+   * Whether local-network sharing is actually working, and why not when it is not.
+   *
+   * The panel needs the difference between the three ways it can be unavailable — switched off,
+   * no address on this machine yet, could not bind — because they call for three different
+   * things from the user and used to be indistinguishable from a null URL.
+   */
+  lanStatus(): LanStatus;
+  /**
+   * Re-read the machine's addresses now instead of waiting for the next poll. Returns true when
+   * something changed. Called by the desktop when the user asks, from the panel.
+   */
+  refreshLanAddress(): boolean;
+  /**
+   * Open or close the unencrypted listener without restarting. Returns the resulting status.
+   *
+   * A no-op when local sharing is off entirely: an unencrypted door onto a network we are not
+   * otherwise sharing on would be a way to *start* sharing without ever choosing to.
+   */
+  setLanPlaintext(enabled: boolean): Promise<LanStatus>;
   dispose(): Promise<void>;
+}
+
+export interface LanStatus {
+  state: 'off' | 'listening' | 'no-address' | 'failed';
+  /** The address published to devices, scheme and port included. Null unless `listening`. */
+  url: string | null;
+  fingerprint256: string | null;
+  /** False when the published address is the plaintext listener's. */
+  encrypted: boolean;
+  securePort: number | null;
+  plaintextPort: number | null;
+  /** Set only when `state` is `failed`; a sentence, not an errno. */
+  error: string | null;
 }
 
 export async function createServer(options: CreateServerOptions = {}): Promise<LocalCastServer> {
@@ -125,19 +159,36 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   const capabilities = new CapabilityReports();
 
   /**
-   * The certificate for the local network, issued (or reloaded) before anything binds.
+   * The certificate for the local network, and the thing that keeps it current.
    *
-   * Doing it here rather than lazily inside `listen` means a machine that cannot write to its
-   * own data directory fails at boot, with the reason in the log — not on the first phone
-   * that tries to connect.
+   * Issued here rather than lazily inside `listen` so that a machine which cannot write to its
+   * own data directory fails at boot, with the reason in the log — not on the first phone that
+   * tries to connect. From then on `LanPublisher` re-reads the machine's addresses and re-issues
+   * when they move, which is what stops a laptop that started before its Wi-Fi came up from
+   * insisting for the rest of the session that it has no local network.
    */
-  const lanCert: LanCertificate | null = config.lan
-    ? ensureLanCertificate({
+  const publisher: LanPublisher | null = config.lan
+    ? new LanPublisher({
         dir: path.join(config.dataDir, 'tls'),
         extraHosts: config.lanHosts,
         log,
+        // Swapped on the bound socket, not rebound. A phone halfway through a 4 GB film must not
+        // have its connection cut because the laptop got a new DHCP lease.
+        onCertificateChanged: (next) => {
+          try {
+            lanServer?.setSecureContext({ key: next.keyPem, cert: next.certPem });
+          } catch (err) {
+            log.error('could not adopt the new local-network certificate', { error: String(err) });
+          }
+        },
+        ...(config.lanWatchIntervalMs > 0 ? { intervalMs: config.lanWatchIntervalMs } : {}),
       })
     : null;
+
+  // The certificate as it was when the listener was constructed. Everything that needs the
+  // *current* one calls `lanCertificateNow`; this exists only to build the TLS server.
+  const initialCert: LanCertificate | null = publisher?.start() ?? null;
+  const lanCertificateNow = (): LanCertificate | null => publisher?.certificate() ?? null;
 
   if (config.lan) {
     /**
@@ -149,15 +200,71 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
      * reports "the address is wrong" has already sent the answer.
      */
     log.info('local network addresses', {
-      published: lanCert?.publishHost ?? '(none)',
+      published: initialCert?.publishHost ?? '(none)',
       seen: lanCandidates()
         .map((c) => `${c.address} on ${c.adapter}${c.tunnel ? ` — skipped: ${c.note}` : ''}`)
         .join('; '),
     });
   }
 
-  // Filled in by `listen`, because the port is not known until the socket is bound.
-  let lanEndpoint: LanEndpoint | null = null;
+  /**
+   * Why the local network is not being served, when it was asked for. Null when nothing is wrong.
+   *
+   * A failure to bind used to propagate out of `listen`, out of `startServer`, and into the
+   * desktop's fatal-error dialog — so a port held by anything at all (a previous copy of the app
+   * still in the tray, most often) took down the whole application, operator API and panel
+   * included. The user's report for that was "the server does not connect at all". It is a
+   * recoverable condition and is now recorded rather than thrown.
+   */
+  let lanFailure: string | null = null;
+
+  /**
+   * Where a device should connect, computed on every call rather than cached at boot.
+   *
+   * Cached, it was wrong after any of the four ordinary events that move a machine's address —
+   * and it was the value the QR code was minted from, so "the address in the QR is stale" and
+   * "pairing does not work" were the same bug wearing two faces.
+   *
+   * The plaintext listener wins when it is bound, and only then. A QR pointing at the encrypted
+   * listener leads a phone to a certificate interstitial, and somebody who has deliberately
+   * turned plaintext on has already accepted what it costs; publishing an address they cannot
+   * use would make the switch pointless. Nothing turns that listener on implicitly.
+   */
+  function currentLanEndpoint(): LanEndpoint | null {
+    const cert = lanCertificateNow();
+    const host = cert?.publishHost ?? null;
+    if (host === null || cert === null) return null;
+
+    const plainPort = portOf(plaintextServer);
+    // Empty fingerprint, deliberately: there is no certificate on this address to pin, and a
+    // client must read the absence as "nothing to verify", never as "skip verification".
+    if (plainPort !== null) return { url: `http://${host}:${plainPort}`, fingerprint256: '' };
+
+    const securePort = portOf(lanServer);
+    if (securePort === null) return null;
+    return { url: `https://${host}:${securePort}`, fingerprint256: cert.fingerprint256 };
+  }
+
+  /** Whether local sharing is working, and which of the three ways it is not when it is not. */
+  function currentLanStatus(): LanStatus {
+    const cert = lanCertificateNow();
+    const state: LanStatus['state'] = !config.lan
+      ? 'off'
+      : lanFailure !== null && portOf(lanServer) === null
+        ? 'failed'
+        : cert?.publishHost == null
+          ? 'no-address'
+          : 'listening';
+    return {
+      state,
+      url: currentLanEndpoint()?.url ?? null,
+      fingerprint256: cert?.fingerprint256 ?? null,
+      encrypted: portOf(plaintextServer) === null,
+      securePort: portOf(lanServer),
+      plaintextPort: portOf(plaintextServer),
+      error: lanFailure,
+    };
+  }
 
   const pairing = new PairingService({
     db,
@@ -166,7 +273,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     events,
     ticketSecret: config.jwtSecret,
     publicHost: () => config.publicHost,
-    lanEndpoint: () => lanEndpoint,
+    lanEndpoint: currentLanEndpoint,
     ownerUserId: () => ownerUserId(db),
   });
 
@@ -239,9 +346,9 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
    */
   const server = http.createServer(app);
   const lanServer =
-    lanCert === null
+    initialCert === null
       ? null
-      : https.createServer({ key: lanCert.keyPem, cert: lanCert.certPem }, (req, res) => {
+      : https.createServer({ key: initialCert.keyPem, cert: initialCert.certPem }, (req, res) => {
           // Marks the request before Express ever sees it, so `edgeSecretGuard` can waive the
           // edge secret for this listener alone. A property on the request object, not a
           // header: a client has no way to set it.
@@ -257,7 +364,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
    * Requires `lan` as well: an unencrypted door onto a network we are not otherwise sharing on
    * would be a way to *start* sharing without ever choosing to.
    */
-  const plaintextServer =
+  let plaintextServer: http.Server | null =
     config.lan && config.lanPlaintext ? createPlaintextListener({ handler: app, log }) : null;
 
   let listening = false;
@@ -285,56 +392,58 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
       listening = true;
       log.info('server listening', { host: addr.address, port: addr.port });
 
-      if (lanServer !== null && lanCert !== null) {
-        const lanAddr = await bind(lanServer, config.lanPort, '0.0.0.0');
-        lanListening = true;
-        lanEndpoint =
-          lanCert.publishHost === null
-            ? null
-            : {
-                url: `https://${lanCert.publishHost}:${lanAddr.port}`,
-                fingerprint256: lanCert.fingerprint256,
-              };
-        log.info('local network listening (https)', {
-          host: lanAddr.address,
-          port: lanAddr.port,
-          // Logged so the value published in the QR code can be checked against the one a
-          // device reports seeing, without anybody having to run openssl.
-          fingerprint: lanCert.fingerprint256,
-          ...(lanEndpoint === null ? {} : { url: lanEndpoint.url }),
-        });
-        if (lanEndpoint === null) {
-          log.warn('local network sharing is on but this machine has no address on one');
+      /**
+       * The two network listeners are opened inside a `try` and their failure is recorded, never
+       * thrown.
+       *
+       * A rejection here used to travel all the way out to the desktop's fatal-error dialog, so a
+       * single busy port — most often a previous copy of the app still sitting in the tray, which
+       * is exactly what happens when somebody closes the window and opens it again — killed the
+       * whole application. No panel, no operator API, no folders, nothing. The local network not
+       * being served is a bad outcome; not starting at all is a worse one, and it hides the cause.
+       */
+      try {
+        if (lanServer !== null) {
+          const lanAddr = await bindPreferring(lanServer, config.lanPort, '0.0.0.0', log);
+          lanListening = true;
+          const cert = lanCertificateNow();
+          log.info('local network listening (https)', {
+            host: lanAddr.address,
+            port: lanAddr.port,
+            // Logged so the value published in the QR code can be checked against the one a
+            // device reports seeing, without anybody having to run openssl.
+            fingerprint: cert?.fingerprint256 ?? '(none)',
+            url: currentLanEndpoint()?.url ?? '(none)',
+          });
+          if (cert?.publishHost == null) {
+            // Not fatal, and no longer permanent: `LanPublisher` keeps looking, so a machine that
+            // started before its Wi-Fi associated picks the address up within a few seconds.
+            log.warn('local network sharing is on but this machine has no address on one yet');
+          }
         }
-      }
 
-      if (plaintextServer !== null) {
-        const plainAddr = await bind(plaintextServer, config.lanPlaintextPort, '0.0.0.0');
-        plaintextListening = true;
-        // A warning, not an info line. This listener is a deliberate exception to "every
-        // connection is encrypted", and a log that states it plainly is part of the price.
-        /**
-         * When it is on, this is the address that gets published.
-         *
-         * A QR code pointing at the encrypted listener leads to a certificate interstitial,
-         * and on a phone that is where pairing stops: the warning page is not the app, so the
-         * link the camera opened does not become a paired device. Somebody who has turned this
-         * listener on has already accepted what it costs, and publishing an address they then
-         * cannot use would make the switch pointless.
-         *
-         * The encrypted listener keeps running on its own port for anything that prefers it.
-         */
-        if (lanCert?.publishHost != null) {
-          lanEndpoint = {
-            url: `http://${lanCert.publishHost}:${plainAddr.port}`,
-            fingerprint256: '',
-          };
+        if (plaintextServer !== null) {
+          const plainAddr = await bindPreferring(
+            plaintextServer,
+            config.lanPlaintextPort,
+            '0.0.0.0',
+            log,
+          );
+          plaintextListening = true;
+          // A warning, not an info line. This listener is a deliberate exception to "every
+          // connection is encrypted", and a log that states it plainly is part of the price.
+          log.warn('local network ALSO listening unencrypted (http)', {
+            host: plainAddr.address,
+            port: plainAddr.port,
+            published: currentLanEndpoint()?.url ?? '(none)',
+            note: 'devices on this address get no offline library and no camera; http is never a secure context',
+          });
         }
-        log.warn('local network ALSO listening unencrypted (http)', {
-          host: plainAddr.address,
-          port: plainAddr.port,
-          published: lanEndpoint?.url ?? '(none)',
-          note: 'devices on this address get no offline library and no camera; http is never a secure context',
+      } catch (err) {
+        lanFailure = describeBindFailure(err, config.lanPort);
+        log.error('local network sharing could not start', {
+          error: lanFailure,
+          note: 'the app itself is running; only sharing on the Wi-Fi is unavailable',
         });
       }
 
@@ -358,21 +467,76 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
 
     lanAccess(): LanAccess {
       return buildLanAccess({
-        certificate: lanCert,
+        certificate: lanCertificateNow(),
         tlsPort: portOf(lanServer),
         plaintextPort: portOf(plaintextServer),
       });
     },
 
     lanEndpoint(): LanEndpoint | null {
-      return lanEndpoint;
+      return currentLanEndpoint();
     },
 
     lanCertificate(): LanCertificate | null {
-      return lanCert;
+      return lanCertificateNow();
+    },
+
+    lanStatus(): LanStatus {
+      return currentLanStatus();
+    },
+
+    refreshLanAddress(): boolean {
+      return publisher?.refresh() ?? false;
+    },
+
+    /**
+     * Open or close the unencrypted listener while the server is running.
+     *
+     * Encryption is the default, and it costs a phone one certificate warning to accept. Some
+     * devices will not let a person past that warning at all — an embedded webview with no
+     * "proceed" affordance, a managed configuration profile — and for them the choice is
+     * plaintext or nothing. That decision belongs to the operator, in one click, on the machine
+     * serving the files. Making them edit a JSON file and restart is not offering a choice.
+     *
+     * The encrypted listener is untouched either way: it keeps its socket, its port and its
+     * certificate. All that changes is which address `lanEndpoint` advertises.
+     */
+    async setLanPlaintext(enabled: boolean): Promise<LanStatus> {
+      if (!config.lan) return currentLanStatus();
+
+      if (enabled && plaintextServer === null) {
+        const next = createPlaintextListener({ handler: app, log });
+        try {
+          const addr = await bindPreferring(next, config.lanPlaintextPort, '0.0.0.0', log);
+          plaintextServer = next;
+          plaintextListening = true;
+          config.lanPlaintext = true;
+          log.warn('local network ALSO listening unencrypted (http)', {
+            port: addr.port,
+            published: currentLanEndpoint()?.url ?? '(none)',
+          });
+        } catch (err) {
+          // Left closed rather than half-open, and the reason is returned as state — the panel
+          // showed a switch, so the panel is where the refusal has to appear.
+          await shutdown(next).catch(() => undefined);
+          lanFailure = describeBindFailure(err, config.lanPlaintextPort);
+          log.error('the unencrypted listener could not start', { error: lanFailure });
+        }
+      } else if (!enabled && plaintextServer !== null) {
+        const closing = plaintextServer;
+        plaintextServer = null;
+        plaintextListening = false;
+        config.lanPlaintext = false;
+        await shutdown(closing);
+        log.info('the unencrypted local-network listener is closed', {
+          published: currentLanEndpoint()?.url ?? '(none)',
+        });
+      }
+      return currentLanStatus();
     },
 
     async dispose(): Promise<void> {
+      publisher?.stop();
       eventsRouter.dispose();
       for (const mod of modules) {
         try {
@@ -405,6 +569,65 @@ function bind(
       resolve(server.address() as AddressInfo);
     });
   });
+}
+
+/** How many ports above the preferred one to try before giving up. */
+const PORT_SEARCH_SPAN = 8;
+
+function isAddressInUse(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return code === 'EADDRINUSE' || code === 'EACCES';
+}
+
+/**
+ * Bind the port the product documents, or the next free one above it.
+ *
+ * The fixed port matters — an address somebody reads off a QR code has to be the same address
+ * tomorrow — but "fixed" cannot mean "or else nothing works". Ports get held: by a previous copy
+ * of this app that has not finished exiting, by a socket in `TIME_WAIT`, by an unrelated program,
+ * and on Windows by Hyper-V's reserved dynamic ranges, which swallow whole blocks and answer
+ * `EACCES` rather than `EADDRINUSE`. Every one of those produced the same user-visible outcome:
+ * the app did not start.
+ *
+ * So the preferred port is tried first and is what will normally be used; a few above it are
+ * tried next, loudly, because the QR code carries the port and will be correct either way.
+ */
+async function bindPreferring(
+  server: http.Server | https.Server,
+  preferred: number,
+  host: string,
+  log: Logger,
+): Promise<AddressInfo> {
+  let lastError: unknown = null;
+  for (let offset = 0; offset <= PORT_SEARCH_SPAN; offset += 1) {
+    const port = preferred + offset;
+    try {
+      const addr = await bind(server, port, host);
+      if (offset > 0) {
+        log.warn('the preferred port was taken, so a nearby one is in use instead', {
+          preferred,
+          using: port,
+          note: 'the address handed to devices carries this port, so pairing is unaffected',
+        });
+      }
+      return addr;
+    } catch (err) {
+      lastError = err;
+      if (!isAddressInUse(err)) throw err;
+    }
+  }
+  throw lastError;
+}
+
+/** A bind failure in words an operator can act on, rather than an errno. */
+function describeBindFailure(err: unknown, preferred: number): string {
+  if (isAddressInUse(err)) {
+    return (
+      `ports ${preferred}–${preferred + PORT_SEARCH_SPAN} are all in use or reserved on this ` +
+      'machine. Another copy of LocalCast may still be running — check the system tray.'
+    );
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** The bound port, or null when the server does not exist or was never bound. */
@@ -542,6 +765,7 @@ export {
 export type { LanCertificate } from './net/selfSigned.js';
 export { lanCandidates, lanIpv4Addresses } from './net/lanAddress.js';
 export type { LanCandidate } from './net/lanAddress.js';
+export { LanPublisher } from './net/lanPublisher.js';
 export { buildLanAccess } from './net/lanAccess.js';
 export type { LanAccess, LanAddress } from './net/lanAccess.js';
 export { CapabilityReports, deviceCapabilityReportSchema } from './http/capabilities.js';

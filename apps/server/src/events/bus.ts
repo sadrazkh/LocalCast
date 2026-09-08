@@ -32,6 +32,8 @@ export class InMemoryEventBus implements EventBus {
     { deviceId: string; handler: (id: number, event: ServerEvent) => void }
   >();
   private nextSubscriberId = 1;
+  /** In-process listeners that see every event. See `observe`. */
+  private readonly observers = new Set<(event: ServerEvent) => void>();
 
   constructor(opts: EventBusOptions = {}) {
     this.bufferSize = opts.bufferSize ?? 256;
@@ -55,6 +57,33 @@ export class InMemoryEventBus implements EventBus {
         // One broken SSE connection must not stop the others from being notified.
       }
     }
+
+    for (const observer of this.observers) {
+      try {
+        observer(event);
+      } catch {
+        // Same rule: an observer that throws is its own problem.
+      }
+    }
+  }
+
+  /**
+   * Every event, with no visibility filter. For the operator side of the app, in-process.
+   *
+   * The device subscriptions above are deliberately filtered — a print job belongs to one device
+   * and must not appear in another's stream. The operator is the opposite case: the whole point of
+   * `{ type: 'device', status: 'pending' }` is that the person at the Windows machine has to see
+   * it, and that person is not a device and holds no device token.
+   *
+   * It is not reachable over HTTP and there is no route that exposes it. The only caller is the
+   * Electron main process, which hosts this server inside itself, so an unfiltered stream never
+   * crosses a process boundary let alone a network one.
+   */
+  observe(handler: (event: ServerEvent) => void): () => void {
+    this.observers.add(handler);
+    return () => {
+      this.observers.delete(handler);
+    };
   }
 
   subscribe(deviceId: string, handler: (event: ServerEvent) => void): () => void {
@@ -93,6 +122,7 @@ export class InMemoryEventBus implements EventBus {
 
   dispose(): void {
     this.subscribers.clear();
+    this.observers.clear();
     this.buffer.length = 0;
   }
 }

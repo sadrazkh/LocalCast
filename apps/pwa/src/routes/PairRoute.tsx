@@ -68,7 +68,15 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }:
       setError(null);
       setPhase('claiming');
       void client
-        .pair({ qr: payload, deviceName, platform: 'ios-pwa' })
+        .pair({
+          qr: payload,
+          deviceName,
+          platform: 'ios-pwa',
+          // The claim takes a moment; the approval takes as long as it takes somebody to reach
+          // the computer. Showing one spinner labelled «در حال اتصال» for both made the second
+          // phase look like a hang, which is most of why pairing was reported as never working.
+          onPhase: (next) => setPhase(next === 'claiming' ? 'claiming' : 'waiting'),
+        })
         .then(() => {
           setPhase('done');
           navigate('/library', { replace: true });

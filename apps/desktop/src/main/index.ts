@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, Notification } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
@@ -7,6 +7,7 @@ import { AppConfigStore, configPathFor, remoteAccessOn } from './appConfig.js';
 import { broadcastEdgeStatus, registerIpc } from './ipc.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
+import { createPairingPrompt } from './pairingPrompt.js';
 import type { PreflightContext } from './preflight/context.js';
 import { registerPreflightIpc } from './preflight/ipc.js';
 import { runPreflight } from './preflight/run.js';
@@ -163,6 +164,11 @@ function paths() {
 async function bootstrap(): Promise<void> {
   await app.whenReady();
 
+  // Windows refuses to show a toast from a process it cannot attribute to an installed
+  // application. electron-builder sets this for the packaged build; setting it here as well makes
+  // the pairing notification work in a development run too, which is where it gets tested.
+  if (process.platform === 'win32') app.setAppUserModelId('net.localcast.desktop');
+
   const p = paths();
   mkdirSync(p.dataDir, { recursive: true });
   // Spool copies and half-finished uploads from a previous run are worthless and can be
@@ -214,9 +220,27 @@ async function bootstrap(): Promise<void> {
     // A getter, like the rest: the handlers are registered before the server exists, and the
     // LAN port is not known until its socket is bound.
     lanEndpoint: () => ({
-      url: serverHandle?.lanUrl ?? null,
-      fingerprint: serverHandle?.lanFingerprint ?? null,
+      url: serverHandle?.lanUrl() ?? null,
+      fingerprint: serverHandle?.lanFingerprint() ?? null,
     }),
+    lanStatus: () =>
+      serverHandle?.lanStatus() ?? {
+        state: 'off',
+        url: null,
+        fingerprint256: null,
+        encrypted: true,
+        securePort: null,
+        plaintextPort: null,
+        error: null,
+      },
+    refreshLanAddress: () => serverHandle?.refreshLanAddress() ?? false,
+    setLanEncrypted: async (encrypted: boolean) => {
+      // Stored first, so the answer survives a restart, then applied to the running server. The
+      // stored value is the user's decision; the listener is only its consequence.
+      appConfig.update({ shareOnLanUnencrypted: !encrypted });
+      if (!serverHandle) throw new Error('The local server has not started yet.');
+      return serverHandle.setLanPlaintext(!encrypted);
+    },
     restartEdge: async (config: NetworkConfig): Promise<EdgeStatus> => {
       if (!edge) throw new Error('network edge is not running');
       return edge.applyConfig(config);
@@ -304,6 +328,52 @@ async function bootstrap(): Promise<void> {
 
   operatorClient = new OperatorClient(serverHandle.port, edgeSecret);
 
+  /**
+   * A phone that has entered the pairing code has to become something a person can see.
+   *
+   * Until this existed the claim landed, the row was written `pending`, and nothing appeared
+   * anywhere — the phone waited five minutes for an approval nobody had been asked for. The event
+   * stream is read in-process rather than over HTTP because the SSE route is device-scoped by
+   * design: the operator holds no device token and could never have subscribed to it.
+   */
+  const pairingPrompt = createPairingPrompt({
+    devices: {
+      list: () => operatorClient!.get('/devices'),
+      approve: (id) => operatorClient!.post(`/devices/${encodeURIComponent(id)}/approve`),
+      reject: (id) => operatorClient!.post(`/devices/${encodeURIComponent(id)}/reject`),
+    },
+    notify: ({ title, body, onClick }) => {
+      // Windows will not show a toast from a process with no application identity. In a packaged
+      // build electron-builder sets this from `appId`; unpackaged, nothing does, and the toast
+      // silently never appears — which is exactly the failure being fixed here.
+      if (!Notification.isSupported()) return;
+      const toast = new Notification({ title, body, urgency: 'critical' });
+      toast.on('click', onClick);
+      toast.show();
+    },
+    ask: async ({ question, detail, approveLabel, rejectLabel }) => {
+      const { response } = await dialog.showMessageBox({
+        type: 'question',
+        message: question,
+        detail,
+        buttons: [approveLabel, rejectLabel],
+        defaultId: 0,
+        // Escape and the window's close button both mean "do not let this device in". The safe
+        // answer is the one that happens when somebody walks away.
+        cancelId: 1,
+        noLink: true,
+      });
+      return response === 0;
+    },
+    onOpenPanel: (route) => openPanel(route),
+    locale: () => appConfig.get().locale,
+    log: {
+      info: (message, fields) => console.log(`[pairing] ${message}`, fields ?? ''),
+      warn: (message, fields) => console.warn(`[pairing] ${message}`, fields ?? ''),
+    },
+  });
+  serverHandle.onEvent((event) => pairingPrompt.handle(event));
+
   // Nothing about the sidecar happens while the feature is off — not even looking for it.
   // Resolving the binary is what produces the "searched: …" paths the prerequisites screen
   // shows, so a build with remote access switched off must not do it: there is no feature to
@@ -378,8 +448,8 @@ async function bootstrap(): Promise<void> {
    * origin and its fingerprint travel in the QR payload's own `url` and `fp` fields instead,
    * which the server fills in at mint time.
    */
-  if (serverHandle.lanUrl) {
-    console.log(`[server] sharing on the local network at ${serverHandle.lanUrl}`);
+  if (serverHandle.lanUrl()) {
+    console.log(`[server] sharing on the local network at ${serverHandle.lanUrl()}`);
   } else if (appConfig.get().shareOnLan) {
     console.warn('[server] local sharing is on, but this machine has no local network address');
   }
