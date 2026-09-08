@@ -1,6 +1,6 @@
 {
   "name": "@localcast/ui-kit",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "//": "Published from source, not from dist. tsc does not copy .module.css, so an emitted dist/ would import stylesheets that are not there. Every consumer is a Vite app that compiles TypeScript and CSS Modules natively, so shipping source is both simpler and correct — and it removes the need for each app to alias this package in its own config.",
