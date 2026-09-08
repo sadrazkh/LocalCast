@@ -83,7 +83,21 @@ export class LanPublisher {
   start(): LanCertificate {
     const cert = this.#reissue();
     const intervalMs = this.options.intervalMs ?? 5_000;
-    this.#timer = setInterval(() => this.refresh(), intervalMs);
+    this.#timer = setInterval(() => {
+      /**
+       * Caught here, without exception. A throw inside a timer callback is an `uncaughtException`,
+       * and the desktop's handler for that exits the process — so a transient failure to write a
+       * re-issued certificate (disk full, antivirus holding the file) would take the whole app down
+       * five seconds after it started, silently. The address is re-read on the next tick anyway.
+       */
+      try {
+        this.refresh();
+      } catch (err) {
+        this.options.log.error('re-reading the local-network address failed; will retry', {
+          error: String(err),
+        });
+      }
+    }, intervalMs);
     // A timer must never be the reason the process refuses to exit.
     this.#timer.unref?.();
     return cert;

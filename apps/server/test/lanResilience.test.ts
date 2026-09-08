@@ -26,17 +26,17 @@ function squat(port: number): Promise<void> {
   });
 }
 
-/** A port nothing else in the suite will ask for. */
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const port = (probe.address() as net.AddressInfo).port;
-      probe.close(() => resolve(port));
-    });
-  });
-}
+/**
+ * Ports nothing else in the suite will ask for.
+ *
+ * Deliberately *outside* the OS's ephemeral range (49152–65535 on Windows). Every other test file
+ * binds `lanPort: 0` and is handed a port from that range, and vitest runs files in parallel — so a
+ * base chosen with `listen(0)` could sit inside a span another file is about to bind into or release
+ * from, and this test would then see a port free up mid-run and bind it. That is a race in the test,
+ * not a property of the code, and it is what these constants remove.
+ */
+const TAKEN_ONE = 18_400;
+const TAKEN_ALL = 18_500;
 
 afterAll(async () => {
   await Promise.all(started.map((s) => s.dispose()));
@@ -48,7 +48,7 @@ afterAll(async () => {
 
 describe('when the local-network port is taken', () => {
   it('moves to the next free port rather than failing', async () => {
-    const wanted = await freePort();
+    const wanted = TAKEN_ONE;
     await squat(wanted);
 
     const ts = await startServer({ lan: true, lanPort: wanted });
@@ -65,15 +65,10 @@ describe('when the local-network port is taken', () => {
   });
 
   it('keeps the operator API answering when every nearby port is taken', async () => {
-    const wanted = await freePort();
-    // The whole search span, so there is nowhere left to go.
-    for (let offset = 0; offset <= 8; offset += 1) {
-      try {
-        await squat(wanted + offset);
-      } catch {
-        // Something else already has it; that serves this test just as well.
-      }
-    }
+    const wanted = TAKEN_ALL;
+    // The whole search span, so there is nowhere left to go. Every squat must succeed: a port held
+    // by something else would serve the same purpose only until that something let it go.
+    for (let offset = 0; offset <= 8; offset += 1) await squat(wanted + offset);
 
     const ts = await startServer({ lan: true, lanPort: wanted });
     started.push(ts);

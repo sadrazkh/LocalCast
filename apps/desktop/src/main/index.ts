@@ -5,9 +5,12 @@ import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
 import { AppConfigStore, configPathFor, remoteAccessOn } from './appConfig.js';
 import { broadcastEdgeStatus, registerIpc } from './ipc.js';
+import { installMainLog } from './mainLog.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
 import { createPairingPrompt } from './pairingPrompt.js';
+import { foreignInstances, killProcess, listLocalCastProcesses } from './processes.js';
+import { acquireInstance, isNewerVersion, type InstanceHello } from './singleInstance.js';
 import type { PreflightContext } from './preflight/context.js';
 import { registerPreflightIpc } from './preflight/ipc.js';
 import { runPreflight } from './preflight/run.js';
@@ -62,26 +65,84 @@ let trayWindow: BrowserWindow | null = null;
 let wizardWindow: BrowserWindow | null = null;
 let quitting = false;
 
-// A second instance would fight the first over the database and the tsnet state directory,
-// so the second one simply surfaces the window the user already has.
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    } else {
-      openPanel();
+/**
+ * The log file comes first — before the instance lock, before `ready`, before anything that can
+ * fail. The report this exists for was "it does not even appear in Task Manager", and the cause
+ * turned out to be the very next statement. A log that starts after the lock would have missed it.
+ */
+const mainLog = installMainLog(paths().dataDir);
+console.log(`[main] LocalCast ${app.getVersion()} starting (pid ${process.pid})`);
+
+/**
+ * A second instance would fight the first over the database and the tsnet state directory, so
+ * there is exactly one — but which one is decided, not defaulted. See `singleInstance.ts` for the
+ * handshake; the short version is that a newer build replaces an older one, and nothing on this
+ * path ever exits without saying why.
+ */
+app.on('second-instance', (_event, _argv, _cwd, additionalData: unknown) => {
+  const hello = additionalData as Partial<InstanceHello> | undefined;
+  if (isNewerVersion(hello?.version, app.getVersion())) {
+    // A newer copy has just started. It is waiting for this lock; give it up cleanly — the server
+    // closes its sockets, the tray icon goes, the database is released — and let it take over.
+    console.log(`[main] a newer copy (${hello?.version}) is starting; stepping aside`);
+    quitting = true;
+    app.quit();
+    return;
+  }
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  } else {
+    openPanel();
+  }
+});
+
+void acquireInstance({
+  requestLock: (hello) => app.requestSingleInstanceLock(hello),
+  version: app.getVersion(),
+  pid: process.pid,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  log: (level, message) => mainLog.line(level, `[instance] ${message}`),
+  otherInstances: async () =>
+    foreignInstances(await listLocalCastProcesses(), { pid: process.pid, ppid: process.ppid }).map(
+      (proc) => proc.pid,
+    ),
+  kill: (pid) => killProcess(pid),
+  ask: async () => {
+    await app.whenReady();
+    const fa = new AppConfigStore(configPathFor(paths().dataDir)).get().locale === 'fa';
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'LocalCast',
+      message: fa
+        ? 'نسخهٔ قبلی LocalCast هنوز در حال اجراست.'
+        : 'An older copy of LocalCast is still running.',
+      detail: fa
+        ? `نسخهٔ ${app.getVersion()} نمی‌تواند تا وقتی نسخهٔ قبلی در tray است شروع شود. می‌توانم آن را ببندم و ادامه بدهم؛ دستگاه‌های وصل‌شده چند ثانیه قطع می‌شوند و دوباره وصل می‌شوند.`
+        : `Version ${app.getVersion()} cannot start while the older copy is in the tray. I can close it and continue; connected devices will drop for a few seconds and reconnect.`,
+      buttons: fa ? ['بستن نسخهٔ قبلی و ادامه', 'خروج'] : ['Close the old copy and continue', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    return response === 0 ? 'replace' : 'quit';
+  },
+})
+  .then((outcome) => {
+    if (outcome === 'quit') {
+      app.quit();
+      return;
     }
-  });
-  // Nothing in bootstrap is allowed to fail silently. Without this catch a startup error
-  // surfaces as an UnhandledPromiseRejectionWarning on a console nobody is reading, and the
-  // user sees an app that started and then did nothing at all.
-  void bootstrap().catch((err: unknown) => {
+    // Nothing in bootstrap is allowed to fail silently. Without this catch a startup error
+    // surfaces as an UnhandledPromiseRejectionWarning on a console nobody is reading, and the
+    // user sees an app that started and then did nothing at all.
+    void bootstrap().catch((err: unknown) => {
+      void reportFatal(err);
+    });
+  })
+  .catch((err: unknown) => {
     void reportFatal(err);
   });
-}
 
 /**
  * Last-resort failure reporting.

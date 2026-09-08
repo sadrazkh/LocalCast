@@ -36,6 +36,7 @@
 | A busy port costs local sharing and nothing else — the panel and the operator API still come up, and say why | `apps/server/src/index.ts` (`bindPreferring`, `lanStatus`) | `apps/server/test/lanResilience.test.ts` |
 | A device that claims a pairing code produces a notification and a prompt the operator can answer | `apps/desktop/src/main/pairingPrompt.ts` | `apps/desktop/src/main/__tests__/pairingPrompt.test.ts` |
 | A scanned pairing link pairs end to end, on a bare LAN address, through the real client | `packages/client-core/src/pairing.ts` | `apps/server/test/pairingEndToEnd.test.ts` |
+| A second copy of the app never exits silently: a newer build replaces an older one, or asks — and every branch is written to `logs/main.log` | `apps/desktop/src/main/singleInstance.ts`, `mainLog.ts` | `apps/desktop/src/main/__tests__/singleInstance.test.ts` |
 
 ## The offline test, and why it is written the way it is
 
