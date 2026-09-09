@@ -115,6 +115,17 @@ export function DevicesScreen() {
     }
   };
 
+  // No confirmation: the device is already revoked, so this changes nothing about access — it
+  // only takes a dead row off the screen, and the activity feed keeps the record.
+  const remove = async (device: DeviceSummary) => {
+    try {
+      await getApi().devices.remove(device.id);
+      await reloadDevices();
+    } catch (err) {
+      report(err);
+    }
+  };
+
   const setMode = async (deviceId: string, folderId: string, mode: AccessMode) => {
     const device = devices.find((candidate) => candidate.id === deviceId);
     if (!device) return;
@@ -182,6 +193,7 @@ export function DevicesScreen() {
                 key={device.id}
                 device={device}
                 onRevoke={() => void revoke(device)}
+                onRemove={() => void remove(device)}
               />
             ))}
           </div>

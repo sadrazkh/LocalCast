@@ -60,6 +60,18 @@ export function PairingScreen() {
     setDefaults(Object.fromEntries(folders.map((folder) => [folder.id, 'full' as AccessMode])));
   }, [folders, loading]);
 
+  /**
+   * Whether the defaults on screen are the ones the first code should carry.
+   *
+   * The first mint used to fire from an effect that ran in the same commit as the seeding
+   * above — and read `defaults` from *that* render, which was still `{}`. So the very first QR
+   * code, the one every new device is paired with, carried no permissions at all, and the
+   * approved phone saw an empty library. "The default access does not work" was exactly right.
+   * Minting now waits until the state holds one entry per folder; with no folders there is
+   * nothing to wait for.
+   */
+  const defaultsReady = !loading && (folders.length === 0 || Object.keys(defaults).length >= folders.length);
+
   const mint = useCallback(
     async (permissions: Record<string, AccessMode>) => {
       setBusy(true);
@@ -82,10 +94,10 @@ export function PairingScreen() {
 
   const requested = useRef(false);
   useEffect(() => {
-    if (requested.current || !seeded.current) return;
+    if (requested.current || !defaultsReady) return;
     requested.current = true;
     void mint(defaults);
-  }, [defaults, mint]);
+  }, [defaults, defaultsReady, mint]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);

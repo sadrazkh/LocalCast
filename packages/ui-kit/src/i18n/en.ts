@@ -87,6 +87,7 @@ export const en: Messages = {
   'devices.pending': 'Awaiting approval',
   'devices.active': 'Active',
   'devices.revoked': 'Revoked',
+  'devices.remove': 'Remove from list',
   'devices.lastSeen': 'Last seen',
   'devices.neverSeen': 'Never',
   'devices.pairingCode': 'Pairing code',

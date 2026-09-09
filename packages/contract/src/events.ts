@@ -21,6 +21,14 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     deviceId: z.string(),
     status: z.enum(['pending', 'active', 'revoked']),
   }),
+  /**
+   * The operator changed what this device may see.
+   *
+   * Without it a phone kept showing the folder list it fetched at pairing time, and a grant
+   * made in the panel took effect only when somebody happened to reload the app — which read,
+   * accurately, as "you give access and then wait for ages or refresh".
+   */
+  z.object({ type: z.literal('permissions'), deviceId: z.string() }),
   z.object({
     type: z.literal('folder'),
     folderId: z.string(),

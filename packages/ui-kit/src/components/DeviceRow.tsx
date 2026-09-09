@@ -26,6 +26,13 @@ export interface DeviceRowProps {
   onApprove?: (deviceId: string) => void;
   onReject?: (deviceId: string) => void;
   onRevoke?: (deviceId: string) => void;
+  /**
+   * Take a revoked device off the list for good.
+   *
+   * Without it the list only grew: every phone ever closed stayed as a «بسته‌شده» row for
+   * ever, and the person who closed it had no way to be rid of it.
+   */
+  onRemove?: (deviceId: string) => void;
   /** Extra trailing controls, e.g. a `Dropdown` of less common operations. */
   actions?: ReactNode;
   className?: string;
@@ -64,7 +71,15 @@ const STATUS: Record<DeviceStatus, { key: MessageKey; tone: 'warning' | 'success
  * The last-seen timestamp uses Persian digits and the Persian calendar under `fa`; it is
  * read, not copied. Nothing about the transport appears here — no address, no relay.
  */
-export function DeviceRow({ device, onApprove, onReject, onRevoke, actions, className }: DeviceRowProps) {
+export function DeviceRow({
+  device,
+  onApprove,
+  onReject,
+  onRevoke,
+  onRemove,
+  actions,
+  className,
+}: DeviceRowProps) {
   const t = useT();
   const format = useFormat();
   const Icon = PLATFORM_ICON[device.platform];
@@ -129,6 +144,11 @@ export function DeviceRow({ device, onApprove, onReject, onRevoke, actions, clas
         {device.status === 'active' && onRevoke ? (
           <Button variant="danger" size="sm" onClick={() => onRevoke(device.id)}>
             {t('devices.revoke')}
+          </Button>
+        ) : null}
+        {device.status === 'revoked' && onRemove ? (
+          <Button variant="ghost" size="sm" onClick={() => onRemove(device.id)}>
+            {t('devices.remove')}
           </Button>
         ) : null}
         {actions}

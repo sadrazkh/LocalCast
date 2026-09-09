@@ -215,8 +215,18 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
   router.get(
     '/devices',
     wrap((_req, res) => {
+      // Claims nobody answered are dropped on the way out, so the list shown is the list that
+      // is true rather than one that grows by a row for every abandoned scan.
+      pairing.pruneAbandoned();
+      // A rejected device — revoked without ever having been approved — is kept a few minutes
+      // for the phone's poll to read the answer, but it is not something the operator needs to
+      // see: they turned it away, and the activity feed says so.
       const rows = db
-        .prepare(`${DEVICE_SUMMARY_SQL} ORDER BY d.created_at DESC`)
+        .prepare(
+          `${DEVICE_SUMMARY_SQL}
+            WHERE NOT (d.status = 'revoked' AND d.dav_password_hash IS NULL)
+            ORDER BY d.created_at DESC`,
+        )
         .all() as DeviceRow[];
       res.json({ devices: rows.map(summaryOf) });
     }),
@@ -428,6 +438,9 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
     });
     apply();
     ctx.activity.record('permissions.updated', deviceId, { count: permissions.length });
+    // The phone refetches its folder list on this. Before it existed, a grant made here was
+    // invisible on the device until the app was reloaded by hand.
+    ctx.events.publish({ type: 'permissions', deviceId });
   }
 
   return router;

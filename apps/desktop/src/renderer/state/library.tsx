@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { DeviceSummary } from '@localcast/contract';
-import { listActivity, listDevices, listFolders } from '../lib/api.js';
+import { getApi, listActivity, listDevices, listFolders } from '../lib/api.js';
 import type { ActivityEntry, AdminFolder } from '../lib/api.js';
 import { useAsync } from '../lib/useAsync.js';
 
@@ -11,7 +11,10 @@ import { useAsync } from '../lib/useAsync.js';
  * The permission matrix is a device × folder grid, the nav rail shows both counts, and the
  * pairing screen needs the folder list to offer default access. Fetching those three lists
  * per screen would mean three copies that disagree the moment a device is approved on one of
- * them. They are loaded here and reloaded explicitly after a mutation — never on a timer.
+ * them. They are loaded here and reloaded after a mutation — and on a push from the server,
+ * never on a timer. The push is what was missing: a phone that had just scanned the code did
+ * not appear until the operator happened to navigate away and back, which read as "the list is
+ * never up to date".
  */
 
 export interface LibraryValue {
@@ -48,6 +51,23 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const reloadAll = useCallback(async () => {
     await Promise.all([folders.reload(), devices.reload(), activity.reload()]);
   }, [folders.reload, devices.reload, activity.reload]);
+
+  useEffect(() => {
+    return getApi().app.onServerEvent((event) => {
+      switch (event['type']) {
+        case 'device':
+        case 'permissions':
+          void devices.reload();
+          void activity.reload();
+          return;
+        case 'folder':
+          void folders.reload();
+          return;
+        default:
+          return;
+      }
+    });
+  }, [devices.reload, activity.reload, folders.reload]);
 
   const value = useMemo<LibraryValue>(
     () => ({

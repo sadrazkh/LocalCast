@@ -8,6 +8,7 @@ import {
   Spinner,
   formatBytes,
   useT,
+  copyText,
 } from '@localcast/ui-kit';
 import { ErrorCode, entrySchema } from '@localcast/contract';
 import type { Entry } from '@localcast/contract';
@@ -183,13 +184,12 @@ function Player({ entry }: { entry: Entry }) {
   }, [entry.id]);
 
   async function copyDav(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(davUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2_000);
-    } catch {
-      setCopied(false);
-    }
+    // `copyText` falls back to the pre-clipboard-API path, which is the only one that exists on
+    // a non-secure origin. `navigator.clipboard` was simply undefined there, and this button
+    // silently did nothing — the "the WebDAV link does not copy" report.
+    const ok = await copyText(davUrl);
+    setCopied(ok);
+    if (ok) window.setTimeout(() => setCopied(false), 2_000);
   }
 
   const handoff = (

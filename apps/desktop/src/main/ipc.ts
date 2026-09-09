@@ -202,6 +202,9 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.deviceRevoke, (_e, id: string) =>
     operator().post(`/devices/${encodeURIComponent(id)}/revoke`),
   );
+  ipcMain.handle(IPC.deviceDelete, (_e, id: string) =>
+    operator().delete(`/devices/${encodeURIComponent(id)}`),
+  );
   ipcMain.handle(IPC.deviceRename, (_e, id: string, name: string) =>
     operator().patch(`/devices/${encodeURIComponent(id)}`, { name }),
   );
@@ -296,6 +299,13 @@ export function registerIpc(deps: IpcDeps): void {
  * constructed — the prerequisites screen has to be able to talk to the main process while
  * nothing else is running yet. This is called once the instance exists.
  */
+/** One server event to every window. Same shape as the edge broadcast, for the same reason. */
+export function broadcastServerEvent(event: unknown): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(IPC.serverEvent, event);
+  }
+}
+
 export function broadcastEdgeStatus(instance: NetEdge): () => void {
   const send = (status: EdgeStatus) => {
     for (const win of BrowserWindow.getAllWindows()) {

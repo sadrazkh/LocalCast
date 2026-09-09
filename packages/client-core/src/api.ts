@@ -142,7 +142,26 @@ export class ApiClient {
 
   /** The read-only WebDAV path for a file, for the "باز در پلیر بومی" handoff. */
   davUrl(folderId: string, path: string, options: DavUrlOptions = {}): string {
-    const suffix = `${DAV_PREFIX}/${encodeURIComponent(folderId)}/${encodePath(path)}`;
+    return this.#withDavCredentials(
+      `${DAV_PREFIX}/${encodeURIComponent(folderId)}/${encodePath(path)}`,
+      options,
+    );
+  }
+
+  /**
+   * The WebDAV mount root — every shared folder this device may see, as one address.
+   *
+   * This is what goes into VLC's "Open Network Stream", the Files app's "Connect to Server",
+   * or Explorer's "Map network drive". With credentials embedded it is a single paste; without
+   * them the client prompts for the device id and the WebDAV password, which are shown beside
+   * it. The trailing slash is deliberate: several clients treat a collection without one as a
+   * file and refuse to list it.
+   */
+  davRootUrl(options: DavUrlOptions = {}): string {
+    return this.#withDavCredentials(`${DAV_PREFIX}/`, options);
+  }
+
+  #withDavCredentials(suffix: string, options: DavUrlOptions): string {
     const credentials = options.credentials;
     if (credentials === undefined) return `${this.#baseUrl}${suffix}`;
     const marker = '://';

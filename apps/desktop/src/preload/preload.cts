@@ -39,6 +39,8 @@ const IPC = {
   deviceApprove: 'device:approve',
   deviceReject: 'device:reject',
   deviceRevoke: 'device:revoke',
+  deviceDelete: 'device:delete',
+  serverEvent: 'server:event',
   deviceRename: 'device:rename',
   devicePermissions: 'device:permissions',
   pairingMint: 'pairing:mint',
@@ -93,6 +95,7 @@ const api = {
     approve: (id: string) => ipcRenderer.invoke(IPC.deviceApprove, id),
     reject: (id: string) => ipcRenderer.invoke(IPC.deviceReject, id),
     revoke: (id: string) => ipcRenderer.invoke(IPC.deviceRevoke, id),
+    remove: (id: string) => ipcRenderer.invoke(IPC.deviceDelete, id),
     rename: (id: string, name: string) => ipcRenderer.invoke(IPC.deviceRename, id, name),
     setPermissions: (id: string, permissions: unknown) =>
       ipcRenderer.invoke(IPC.devicePermissions, id, permissions),
@@ -138,6 +141,11 @@ const api = {
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),
+    onServerEvent: (handler: (event: unknown) => void) => {
+      const listener = (_e: unknown, event: unknown) => handler(event);
+      ipcRenderer.on(IPC.serverEvent, listener);
+      return () => ipcRenderer.removeListener(IPC.serverEvent, listener);
+    },
     activity: (limit?: number) => ipcRenderer.invoke(IPC.activityList, limit),
     completeWizard: () => ipcRenderer.invoke(IPC.wizardComplete),
     openExternal: (url: string) => ipcRenderer.invoke(IPC.openExternal, url),

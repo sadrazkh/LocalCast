@@ -102,6 +102,11 @@ export interface LanEndpoint {
   fingerprint256: string;
 }
 
+/** How long an unanswered claim stays in the list. Long past any pairing code's life. */
+const PENDING_GRACE_MS = 60 * 60 * 1000;
+/** How long a rejected, never-approved row is kept so the phone's poll can read «rejected». */
+const REJECTED_GRACE_MS = 15 * 60 * 1000;
+
 export class PairingService {
   /**
    * The generated WebDAV password is shown exactly once, so only its hash reaches the
@@ -228,6 +233,16 @@ export class PairingService {
 
     const deviceId = randomUUID();
     const userId = this.deps.ownerUserId();
+    /**
+     * A name nobody else on the list already has.
+     *
+     * Every phone arrived as «آیفون», so three of them in the list were three identical rows and
+     * the operator could not tell which one they were approving — or which one to close. The
+     * client now sends a descriptive default, and this is the guarantee behind it: two devices
+     * that still collide get «… (2)», «… (3)». Revoked rows do not reserve a name; a phone that
+     * was closed and pairs again should get its own name back, not a numbered copy of it.
+     */
+    const deviceName = this.uniqueName(req.deviceName);
 
     // Consuming the token and creating the device is one step: two claims racing on the same
     // code must not both end up with a pending device.
@@ -245,7 +260,7 @@ export class PairingService {
       db.prepare(
         `INSERT INTO devices (id, user_id, name, platform, status, created_at)
          VALUES (?, ?, ?, ?, 'pending', ?)`,
-      ).run(deviceId, userId, req.deviceName, req.platform, now);
+      ).run(deviceId, userId, deviceName, req.platform, now);
       db.prepare('UPDATE pairing_tokens SET consumed_by_device = ? WHERE id = ?').run(
         deviceId,
         token.id,
@@ -253,7 +268,7 @@ export class PairingService {
     });
     consume();
 
-    this.deps.activity.record('device.claimed', deviceId, { name: req.deviceName, peer });
+    this.deps.activity.record('device.claimed', deviceId, { name: deviceName, peer });
     this.deps.events.publish({ type: 'device', deviceId, status: 'pending' });
 
     return { deviceId, claimTicket: this.claimTicket(deviceId), status: 'pending' };
@@ -348,6 +363,16 @@ export class PairingService {
     return { davPassword };
   }
 
+  /**
+   * Rejecting marks the row revoked — and the row then leaves the list on its own.
+   *
+   * Marked rather than deleted, because the phone is still polling: it has to be told
+   * «rejected» in words, and a row that is simply gone answers 404, which the phone can only
+   * show as "not found". So the row stays just long enough for that poll to land, is never
+   * shown to the operator (see the device listing), and `pruneAbandoned` removes it once the
+   * phone has certainly given up. A pending device has no tokens and no grants; the activity
+   * feed is the whole record it needs.
+   */
   reject(deviceId: string): void {
     const device = this.deps.tokens.getDevice(deviceId);
     if (!device) throw new ApiException(ErrorCode.NOT_FOUND, 'Device not found');
@@ -355,6 +380,48 @@ export class PairingService {
     this.pendingDavPasswords.delete(deviceId);
     this.deps.activity.record('device.rejected', deviceId, { name: device.name });
     this.deps.events.publish({ type: 'device', deviceId, status: 'revoked' });
+  }
+
+  /**
+   * Drop the rows nobody will ever act on again.
+   *
+   * Two kinds. A pending device whose claim nobody answered: the phone gave up after five
+   * minutes, and the row sat as «در انتظار تأیید» indefinitely. And a rejected device — revoked
+   * without ever having been approved, which is what a missing WebDAV hash means — once the
+   * phone has certainly stopped polling. Called from the operator's device listing, so the list
+   * shown is the list that is true. The list used to only ever grow.
+   */
+  pruneAbandoned(now = Date.now()): number {
+    const pendingCutoff = now - PENDING_GRACE_MS;
+    const rejectedCutoff = now - REJECTED_GRACE_MS;
+    const result = this.deps.db
+      .prepare(
+        `DELETE FROM devices
+          WHERE (status = 'pending' AND created_at < ?)
+             OR (status = 'revoked' AND dav_password_hash IS NULL AND created_at < ?)`,
+      )
+      .run(pendingCutoff, rejectedCutoff);
+    if (result.changes > 0) {
+      this.deps.activity.record('device.pruned', null, { count: result.changes });
+    }
+    return result.changes;
+  }
+
+  private uniqueName(wanted: string): string {
+    const base = wanted.trim().slice(0, 64) || 'Device';
+    const taken = new Set(
+      (
+        this.deps.db
+          .prepare("SELECT name FROM devices WHERE status <> 'revoked'")
+          .all() as { name: string }[]
+      ).map((row) => row.name),
+    );
+    if (!taken.has(base)) return base;
+    for (let n = 2; n < 1000; n += 1) {
+      const candidate = `${base} (${n})`;
+      if (!taken.has(candidate)) return candidate;
+    }
+    return `${base} (${Date.now() % 10000})`;
   }
 
   /** The snapshot taken when the code was minted, so later default changes do not widen it. */

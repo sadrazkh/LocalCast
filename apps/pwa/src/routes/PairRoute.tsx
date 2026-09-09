@@ -6,6 +6,7 @@ import { useQrScanner } from '../hooks/useQrScanner.js';
 import { useClient } from '../client/ClientProvider.js';
 import { useAppT } from '../i18n/messages.js';
 import { runManualPairing } from '../pairing/manualPairing.js';
+import { detectDeviceIdentity } from '../pairing/deviceIdentity.js';
 import { navigate } from '../router.js';
 import { Screen } from '../components/Screen.js';
 import styles from './PairRoute.module.css';
@@ -46,7 +47,10 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }:
   const [phase, setPhase] = useState<PairPhase>('scanning');
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('');
-  const [deviceName, setDeviceName] = useState(defaultDeviceName ?? at('pair.deviceNameDefault'));
+  // What this phone is, read once. The name is editable before the first claim; the platform
+  // rides along with it so the operator's list shows the right icon and label.
+  const [identity] = useState(() => detectDeviceIdentity());
+  const [deviceName, setDeviceName] = useState(defaultDeviceName ?? identity.name);
   // A QR sits in front of the camera for several frames, so the decoder fires repeatedly.
   // Without this guard the second frame starts a second claim against a single-use code and
   // the first one's approval is thrown away.
@@ -71,7 +75,7 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }:
         .pair({
           qr: payload,
           deviceName,
-          platform: 'ios-pwa',
+          platform: identity.platform,
           // The claim takes a moment; the approval takes as long as it takes somebody to reach
           // the computer. Showing one spinner labelled «در حال اتصال» for both made the second
           // phase look like a hang, which is most of why pairing was reported as never working.
@@ -87,7 +91,7 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }:
           setError(messageOf(cause));
         });
     },
-    [at, client, deviceName],
+    [at, client, deviceName, identity.platform],
   );
 
   /**
@@ -123,7 +127,7 @@ export function PairRoute({ decode, getUserMedia, defaultDeviceName, fromLink }:
         clock: systemClock,
         code,
         deviceName,
-        platform: 'ios-pwa',
+        platform: identity.platform,
         host: window.location.hostname,
         onPhase: (next) => setPhase(next === 'claiming' ? 'claiming' : 'waiting'),
       });

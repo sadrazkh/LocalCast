@@ -22,6 +22,7 @@ import { folderSchema } from '@localcast/contract';
 import type { Entry, Folder } from '@localcast/contract';
 import { useClient, useConnectionState } from '../client/ClientProvider.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useServerEvent } from '../hooks/useServerEvent.js';
 import { useEntryPages, useInfiniteScroll } from '../hooks/useEntryPages.js';
 import { useAppT } from '../i18n/messages.js';
 import { buildHref, navigate } from '../router.js';
@@ -67,6 +68,23 @@ function FolderList() {
     },
     [client],
   );
+
+  /**
+   * Refetch the moment the operator changes what this device may see.
+   *
+   * The list was fetched once, at mount, and served from the offline cache after that — so a
+   * folder granted in the panel appeared here only when somebody reloaded the app by hand. The
+   * cache entry is dropped first, or the refetch would be answered from it.
+   */
+  const refetchFolders = () => {
+    const invalidate = client.cache?.invalidate('folders', 'all') ?? Promise.resolve();
+    void invalidate.finally(() => folders.reload());
+  };
+  useServerEvent('permissions', refetchFolders);
+  useServerEvent('device', (event) => {
+    if (event.status === 'active') refetchFolders();
+  });
+  useServerEvent('folder', refetchFolders);
 
   const writable = (folders.value ?? []).filter((folder) => folder.writable && folder.available);
 

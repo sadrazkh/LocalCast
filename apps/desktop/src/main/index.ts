@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
 import { AppConfigStore, configPathFor, remoteAccessOn } from './appConfig.js';
-import { broadcastEdgeStatus, registerIpc } from './ipc.js';
+import { broadcastEdgeStatus, broadcastServerEvent, registerIpc } from './ipc.js';
 import { installMainLog } from './mainLog.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
@@ -433,7 +433,11 @@ async function bootstrap(): Promise<void> {
       warn: (message, fields) => console.warn(`[pairing] ${message}`, fields ?? ''),
     },
   });
-  serverHandle.onEvent((event) => pairingPrompt.handle(event));
+  serverHandle.onEvent((event) => {
+    pairingPrompt.handle(event);
+    // And every window, so the devices list and the matrix change the moment the server does.
+    broadcastServerEvent(event);
+  });
 
   // Nothing about the sidecar happens while the feature is off — not even looking for it.
   // Resolving the binary is what produces the "searched: …" paths the prerequisites screen

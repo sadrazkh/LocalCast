@@ -61,6 +61,15 @@ export const appFa = {
   'servers.unpair': 'جدا کردن این دستگاه',
   'servers.unpairConfirm': 'دسترسی این گوشی به سرور بسته می‌شود و باید دوباره جفت شود.',
   'servers.davPassword': 'رمز WebDAV این دستگاه',
+  'servers.davTitle': 'اتصال از پلیر یا فایل‌منیجر (WebDAV)',
+  'servers.davHint':
+    'این نشانی را در VLC («باز کردن جریان شبکه»)، برنامهٔ Files آیفون («Connect to Server») یا هر پلیری که WebDAV می‌فهمد بچسبانید. نام کاربری و رمز داخل خودِ نشانی هست؛ اگر جداگانه پرسید، از دو خط پایین.',
+  'servers.davAddress': 'نشانی WebDAV',
+  'servers.davUsername': 'نام کاربری',
+  'servers.davCopy': 'رونوشت نشانی',
+  'servers.davCopyPassword': 'رونوشت رمز',
+  'servers.davCertNote':
+    'اگر پلیر دربارهٔ گواهی هشدار داد، همان است که مرورگر بار اول پرسید؛ بپذیرید. VLC این را با یک سؤال می‌پرسد و به خاطر می‌سپارد.',
   'servers.deviceName': 'نام دستگاه',
   'servers.notPaired': 'این گوشی به هیچ سروری جفت نشده است',
   'servers.pairNow': 'جفت‌شدن با سرور',
@@ -188,6 +197,15 @@ export const appEn: AppMessages = {
   'servers.unpair': 'Unpair this device',
   'servers.unpairConfirm': 'This phone loses access to the server and has to be paired again.',
   'servers.davPassword': 'This device’s WebDAV password',
+  'servers.davTitle': 'Connect from a player or file manager (WebDAV)',
+  'servers.davHint':
+    'Paste this address into VLC (“Open Network Stream”), the iPhone Files app (“Connect to Server”), or any player that speaks WebDAV. The username and password are inside the address; if a client asks for them separately, they are the two lines below.',
+  'servers.davAddress': 'WebDAV address',
+  'servers.davUsername': 'Username',
+  'servers.davCopy': 'Copy address',
+  'servers.davCopyPassword': 'Copy password',
+  'servers.davCertNote':
+    'If the player warns about the certificate, it is the same one the browser asked about the first time; accept it. VLC asks once and remembers.',
   'servers.deviceName': 'Device name',
   'servers.notPaired': 'This phone is not paired with a server',
   'servers.pairNow': 'Pair with a server',

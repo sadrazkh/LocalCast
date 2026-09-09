@@ -54,6 +54,7 @@ export * from './icons/index.js';
 export { cx } from './utils/cx.js';
 export type { ClassValue } from './utils/cx.js';
 export { useDomId } from './utils/useId.js';
+export { copyText } from './utils/clipboard.js';
 
 // ── primitives ────────────────────────────────────────────────────────────────────────
 export { Badge } from './components/Badge.js';

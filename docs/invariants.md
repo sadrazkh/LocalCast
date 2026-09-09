@@ -36,6 +36,10 @@
 | A busy port costs local sharing and nothing else — the panel and the operator API still come up, and say why | `apps/server/src/index.ts` (`bindPreferring`, `lanStatus`) | `apps/server/test/lanResilience.test.ts` |
 | A device that claims a pairing code produces a notification and a prompt the operator can answer | `apps/desktop/src/main/pairingPrompt.ts` | `apps/desktop/src/main/__tests__/pairingPrompt.test.ts` |
 | A scanned pairing link pairs end to end, on a bare LAN address, through the real client | `packages/client-core/src/pairing.ts` | `apps/server/test/pairingEndToEnd.test.ts` |
+| The first QR code carries the default permissions shown beside it — a device approved from it can see the folders it was promised | `apps/desktop/src/renderer/panel/PairingScreen.tsx` (`defaultsReady`) | `apps/server/test/pairingEndToEnd.test.ts` covers the server half; the render ordering is documented at the constant |
+| A grant made in the panel reaches the phone without a reload, and the panel's lists follow the server without a timer | `packages/contract/src/events.ts` (`permissions`), `apps/desktop/src/main/index.ts` (`broadcastServerEvent`), `apps/pwa/src/routes/LibraryRoute.tsx` | `apps/server/test/deviceList.test.ts` → *a grant reaching the phone* |
+| The device list is the list that is true: names are distinct, rejected and abandoned rows leave on their own, revoked rows can be removed | `apps/server/src/auth/pairing.ts` (`uniqueName`, `pruneAbandoned`), `apps/server/src/http/routes/operator.ts` | `apps/server/test/deviceList.test.ts` |
+| «کپی» copies, on every origin this app is served from | `packages/ui-kit/src/utils/clipboard.ts` | `packages/ui-kit/src/utils/clipboard.test.ts` |
 | A second copy of the app never exits silently: a newer build replaces an older one, or asks — and every branch is written to `logs/main.log` | `apps/desktop/src/main/singleInstance.ts`, `mainLog.ts` | `apps/desktop/src/main/__tests__/singleInstance.test.ts` |
 
 ## The offline test, and why it is written the way it is

@@ -12,6 +12,7 @@ import {
   RadioGroup,
   ServerIcon,
   Spinner,
+  copyText,
   formatAddress,
   useT,
 } from '@localcast/ui-kit';
@@ -26,6 +27,50 @@ import { useAppT, type AppMessageKey } from '../i18n/messages.js';
 import { buildHref, navigate } from '../router.js';
 import { Screen, toDotState } from '../components/Screen.js';
 import styles from './ServersRoute.module.css';
+
+/**
+ * Address, username, password — each with its own copy button, each copy honest about
+ * whether it happened. `copyText` is what makes that true on a non-secure origin, where
+ * `navigator.clipboard` does not exist and a plain call would have failed silently.
+ */
+function DavHandoff({ address, username, password }: { address: string; username: string; password: string }) {
+  const t = useT();
+  const at = useAppT();
+  const [copied, setCopied] = useState<'address' | 'password' | null>(null);
+
+  const copy = async (which: 'address' | 'password', value: string): Promise<void> => {
+    const ok = await copyText(value);
+    setCopied(ok ? which : null);
+    if (ok) window.setTimeout(() => setCopied((current) => (current === which ? null : current)), 2_000);
+  };
+
+  return (
+    <div className={styles.rows}>
+      <div className={styles.row}>
+        <span className={styles.label}>{at('servers.davAddress')}</span>
+        <span className={`${styles.value} ${styles.mono}`} data-selectable="true" data-testid="dav-address">
+          {address}
+        </span>
+      </div>
+      <div className={styles.row}>
+        <span className={styles.label}>{at('servers.davUsername')}</span>
+        <span className={`${styles.value} ${styles.mono}`} data-selectable="true">
+          {username}
+        </span>
+      </div>
+      <PasswordInput readOnly value={password} label={at('servers.davPassword')} />
+      <div className={styles.actions}>
+        <Button variant="secondary" onClick={() => void copy('address', address)} data-testid="dav-copy">
+          {copied === 'address' ? t('common.copied') : at('servers.davCopy')}
+        </Button>
+        <Button variant="ghost" onClick={() => void copy('password', password)}>
+          {copied === 'password' ? t('common.copied') : at('servers.davCopyPassword')}
+        </Button>
+      </div>
+      <p className={styles.note}>{at('servers.davCertNote')}</p>
+    </div>
+  );
+}
 
 const EDGE_LABEL: Record<EdgeState, MessageKey> = {
   stopped: 'edge.stopped',
@@ -142,13 +187,23 @@ function ServerList() {
           <ChevronEndIcon size={16} />
         </a>
 
-        <Panel title={at('servers.davPassword')}>
+        <Panel title={at('servers.davTitle')} description={at('servers.davHint')}>
           {/*
-            Shown once at pairing and then only here, behind a reveal. It is the credential a
-            native player is handed, so it has to be recoverable — but it is still a password
-            and does not belong in plain sight on a screen someone may hand across a table.
+            The whole mount as one address, credentials embedded, because that is what a
+            player wants pasted. There used to be only the password here — no address, no
+            username — which left the user with a secret and nothing to use it on.
+
+            The password is behind a reveal. It is the credential a native player is handed,
+            so it has to be recoverable, but it is still a password and does not belong in
+            plain sight on a screen someone may hand across a table.
           */}
-          <PasswordInput readOnly value={session.davPassword} label={at('servers.davPassword')} />
+          <DavHandoff
+            address={client.api.davRootUrl({
+              credentials: { deviceId: session.deviceId, davPassword: session.davPassword },
+            })}
+            username={session.deviceId}
+            password={session.davPassword}
+          />
         </Panel>
 
         <div className={styles.actions}>

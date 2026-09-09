@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckIcon, CopyIcon, cx, formatAddress, useT } from '@localcast/ui-kit';
+import { CheckIcon, CopyIcon, copyText, cx, formatAddress, useT } from '@localcast/ui-kit';
 import { useCopy } from '../lib/copy.js';
 import styles from './AddressField.module.css';
 
@@ -30,11 +30,12 @@ export function AddressField({ host, label, className }: AddressFieldProps) {
 
   const onCopy = () => {
     if (!value) return;
-    // `navigator.clipboard` is absent in a jsdom test and can be absent behind a permissions
-    // policy; failing to copy must not throw inside a click handler.
-    void navigator.clipboard?.writeText(value).catch(() => undefined);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_500);
+    // «کپی شد» only when something was actually copied. The old handler said it regardless,
+    // which on a page without `navigator.clipboard` was a button that lied.
+    void copyText(value).then((ok) => {
+      setCopied(ok);
+      if (ok) window.setTimeout(() => setCopied(false), 1_500);
+    });
   };
 
   return (

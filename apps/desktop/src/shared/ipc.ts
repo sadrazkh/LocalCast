@@ -42,6 +42,7 @@ export const IPC = {
   deviceApprove: 'device:approve',
   deviceReject: 'device:reject',
   deviceRevoke: 'device:revoke',
+  deviceDelete: 'device:delete',
   deviceRename: 'device:rename',
   devicePermissions: 'device:permissions',
 
@@ -58,6 +59,9 @@ export const IPC = {
   lanStatus: 'lan:status',
   lanRefresh: 'lan:refresh',
   lanSetEncrypted: 'lan:set-encrypted',
+
+  // server events, pushed to every window
+  serverEvent: 'server:event',
 
   // app
   activityList: 'activity:list',
@@ -181,6 +185,8 @@ export interface DesktopApi {
     approve(id: string): Promise<DeviceSummary>;
     reject(id: string): Promise<void>;
     revoke(id: string): Promise<void>;
+    /** Removes the row. For a device that is already revoked, or one never approved. */
+    remove(id: string): Promise<void>;
     rename(id: string, name: string): Promise<DeviceSummary>;
     setPermissions(id: string, permissions: { folderId: string; mode: string }[]): Promise<DeviceSummary>;
   };
@@ -225,6 +231,13 @@ export interface DesktopApi {
   };
   app: {
     info(): Promise<AppInfo>;
+    /**
+     * Every event the in-process server publishes — a device claiming a code, an approval, a
+     * revocation, a grant changing, a folder going away. Pushed, not polled: the panel's lists
+     * used to reload only after the operator's own clicks, so a phone that had just scanned the
+     * code was invisible until somebody happened to navigate away and back.
+     */
+    onServerEvent(handler: (event: { type: string; [key: string]: unknown }) => void): () => void;
     activity(limit?: number): Promise<{ at: number; kind: string; deviceId: string | null; detail: unknown }[]>;
     completeWizard(): Promise<void>;
     openExternal(url: string): Promise<void>;

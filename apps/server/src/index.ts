@@ -718,7 +718,8 @@ function isVisibleTo(
       return row?.device_id === deviceId;
     }
     case 'device':
-      // A device hears about its own status change and nobody else's.
+    case 'permissions':
+      // A device hears about its own status and its own grants, and nobody else's.
       return event.deviceId === deviceId;
     case 'folder': {
       const row = db

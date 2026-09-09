@@ -90,6 +90,7 @@ export const fa = {
   'devices.pending': 'در انتظار تأیید',
   'devices.active': 'فعال',
   'devices.revoked': 'بسته‌شده',
+  'devices.remove': 'حذف از فهرست',
   'devices.lastSeen': 'آخرین بازدید',
   'devices.neverSeen': 'هرگز',
   'devices.pairingCode': 'کد پیرینگ',
