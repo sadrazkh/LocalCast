@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, RefreshIcon, Switch } from '@localcast/ui-kit';
+import type { FirewallInfo } from '../../shared/ipc.js';
 import { AddressField } from '../components/AddressField.js';
 import { getApi } from '../lib/api.js';
 import { useCopy } from '../lib/copy.js';
@@ -26,7 +27,45 @@ export function LanShareCard() {
   const [error, setError] = useState<string | null>(null);
 
   const lan = info?.lan ?? null;
+  const lanState = lan?.state ?? 'off';
+
+  /**
+   * Windows Firewall, read once the card is on screen and again after a repair.
+   *
+   * Asked here rather than at boot: the answer only matters to somebody looking at the address a
+   * phone is about to use, and the PowerShell read costs a second the startup path should not pay.
+   */
+  const [firewall, setFirewall] = useState<FirewallInfo | null>(null);
+  const [firewallNote, setFirewallNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (lanState === 'off') return;
+    let live = true;
+    void getApi()
+      .lan.firewall()
+      .then((state) => {
+        if (live) setFirewall(state);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [lanState]);
+
   if (lan === null || lan.state === 'off') return null;
+
+  async function allowFirewall(): Promise<void> {
+    setBusy(true);
+    setFirewallNote(null);
+    try {
+      const after = await getApi().lan.allowFirewall();
+      setFirewall(after);
+      setFirewallNote(after.state === 'allowed' ? c('lan.firewallFixed') : c('lan.firewallNotFixed'));
+    } catch (err) {
+      setFirewallNote(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function setEncrypted(next: boolean): Promise<void> {
     setBusy(true);
@@ -80,6 +119,27 @@ export function LanShareCard() {
         <p className={styles.problem} role="alert">
           {c('lan.failed')}
           {lan.error === null ? null : <span className={styles.detail}>{lan.error}</span>}
+        </p>
+      )}
+
+      {firewall === null || firewall.state === 'unavailable' ? null : firewall.state === 'allowed' ? (
+        <p className={styles.note} data-testid="firewall-ok">
+          {c('lan.firewallAllowed')}
+        </p>
+      ) : (
+        <div className={styles.problem} role={firewall.state === 'blocked' ? 'alert' : 'status'}>
+          <span>{firewall.state === 'blocked' ? c('lan.firewallBlocked') : c('lan.firewallNoRule')}</span>
+          <span className={styles.detail}>{c('lan.firewallAllowHint')}</span>
+          <div className={styles.actions}>
+            <Button variant="primary" size="sm" loading={busy} onClick={() => void allowFirewall()}>
+              {c('lan.firewallAllow')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {firewallNote === null ? null : (
+        <p className={styles.note} role="status">
+          {firewallNote}
         </p>
       )}
 

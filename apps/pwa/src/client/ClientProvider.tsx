@@ -96,6 +96,9 @@ export function ClientProvider({
         cacheStore: cacheStore ?? makeCacheStore(),
         clock: systemClock,
         baseUrl: resolvedBaseUrl,
+        // Follow the server when its address changes under us — a DHCP lease moving no longer
+        // means «قطع» until the phone is paired again. The alternates ride in on `/me`.
+        originFailover: true,
         ...(logger === undefined ? {} : { logger }),
       }),
     // Deliberately constructed once. A client rebuilt on a prop change would drop the SSE

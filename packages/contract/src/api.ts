@@ -129,6 +129,13 @@ export const meResponseSchema = z.object({
     version: z.string(),
     /** The MagicDNS host clients should keep using; may change after a mode switch. */
     host: z.string(),
+    /**
+     * Every local-network origin this server answers on right now, best first — the address
+     * the device paired against, then `https://<hostname>.local:<port>`, then anything else in
+     * the certificate. A client keeps these and, when the one it has stops answering, tries
+     * the next: a DHCP lease moving no longer means «قطع» until somebody re-pairs.
+     */
+    addresses: z.array(z.string().url()).default([]),
   }),
   permissions: z.array(folderPermissionSchema),
 });

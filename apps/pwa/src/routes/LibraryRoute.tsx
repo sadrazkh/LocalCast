@@ -17,10 +17,13 @@ import {
   formatCount,
   useLocale,
   useT,
+  CopyIcon,
+  CheckIcon,
+  copyText,
 } from '@localcast/ui-kit';
 import { folderSchema } from '@localcast/contract';
 import type { Entry, Folder } from '@localcast/contract';
-import { useClient, useConnectionState } from '../client/ClientProvider.js';
+import { useClient, useConnectionState, useClientContext } from '../client/ClientProvider.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useServerEvent } from '../hooks/useServerEvent.js';
 import { useEntryPages, useInfiniteScroll } from '../hooks/useEntryPages.js';
@@ -183,6 +186,10 @@ function FolderContents({ folderId, path }: { folderId: string; path: string }) 
   const [sort, setSort] = useState<LibrarySort>('name');
   const [printing, setPrinting] = useState<Entry | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
+  const client = useClient();
+  const { session } = useClientContext();
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyNote, setCopyNote] = useState<string | null>(null);
 
   const page = useEntryPages(folderId, path);
   useInfiniteScroll(sentinel, page.loadMore, !page.complete && !page.loading);
@@ -211,6 +218,54 @@ function FolderContents({ folderId, path }: { folderId: string; path: string }) 
         startIcon={<PrinterIcon size={16} />}
         onClick={() => setPrinting(entry)}
       />
+    );
+  }
+
+  /**
+   * A link a native player can open, one tap from the list.
+   *
+   * The WebDAV address with the credentials embedded, so it is a single paste into VLC's
+   * "Open Network Stream". It used to exist only inside the player, behind a tap into a file the
+   * browser then tried to play first — for a 4K MKV that is a black screen before the button.
+   */
+  async function copyLink(entry: Entry): Promise<void> {
+    if (session === null) return;
+    const url = client.api.davUrl(entry.folderId, entry.path, {
+      credentials: { deviceId: session.deviceId, davPassword: session.davPassword },
+    });
+    const ok = await copyText(url);
+    setCopiedId(ok ? entry.id : null);
+    setCopyNote(ok ? at('library.copyLinkDone') : at('library.copyLinkFailed'));
+    window.setTimeout(() => {
+      setCopiedId((current) => (current === entry.id ? null : current));
+      setCopyNote(null);
+    }, 3_000);
+  }
+
+  function copyAction(entry: Entry) {
+    if (entry.isDir || session === null) return null;
+    return (
+      <Button
+        iconOnly
+        size="sm"
+        variant="ghost"
+        aria-label={`${at('library.copyLink')} — ${entry.name}`}
+        startIcon={copiedId === entry.id ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
+        onClick={() => void copyLink(entry)}
+        data-testid="copy-link"
+      />
+    );
+  }
+
+  function actionsFor(entry: Entry) {
+    const print = printAction(entry);
+    const copy = copyAction(entry);
+    if (print === null && copy === null) return null;
+    return (
+      <>
+        {copy}
+        {print}
+      </>
     );
   }
 
@@ -300,7 +355,7 @@ function FolderContents({ folderId, path }: { folderId: string; path: string }) 
               actions={
                 <>
                   {looksLike4k(entry) ? <Badge tone="neutral">4K</Badge> : null}
-                  {printAction(entry)}
+                  {actionsFor(entry)}
                 </>
               }
             />
@@ -309,9 +364,15 @@ function FolderContents({ folderId, path }: { folderId: string; path: string }) 
       ) : (
         <div className={styles.list} data-testid="library-list">
           {visible.map((entry) => (
-            <FileRow key={entry.id} entry={entry} onOpen={() => open(entry)} actions={printAction(entry)} />
+            <FileRow key={entry.id} entry={entry} onOpen={() => open(entry)} actions={actionsFor(entry)} />
           ))}
         </div>
+      )}
+
+      {copyNote === null ? null : (
+        <p className={styles.end} role="status">
+          {copyNote}
+        </p>
       )}
 
       {/* The sentinel drives the scroll; the button is what makes the same thing reachable

@@ -78,6 +78,7 @@ vi.mock('electron', () => ({
     // Windows will not show a toast from a process it cannot attribute to an installed app, so
     // bootstrap sets this. Absent from the double, it threw and took startup down with it.
     setAppUserModelId: () => {},
+    setLoginItemSettings: () => {},
     getPath: (name: string) =>
       name === 'appData' ? h.paths.appData : name === 'exe' ? h.paths.exe : h.paths.temp,
     getAppPath: () => h.paths.appPath,

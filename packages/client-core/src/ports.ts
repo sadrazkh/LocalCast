@@ -73,6 +73,14 @@ export interface StoredSession {
    */
   baseUrl?: string;
   /**
+   * Other origins the same server answers on — `https://sadra.local:8420` beside the bare IP.
+   *
+   * Learned from `/me` after pairing and refreshed on every start. When `baseUrl` stops
+   * answering these are tried in order, which is what lets a phone survive the laptop's address
+   * changing without being paired again.
+   */
+  altBaseUrls?: string[];
+  /**
    * The certificate to pin for `baseUrl`, when that server issued its own.
    *
    * Stored alongside the tokens deliberately: the pin has to survive a restart, and a client

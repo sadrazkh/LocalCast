@@ -125,6 +125,25 @@ export const copy = {
       'این رایانه هنوز روی هیچ شبکهٔ محلی نشانی ندارد. وای‌فای یا کابل شبکه را بررسی کنید؛ به‌محض وصل شدن، نشانی خودش اینجا می‌آید.',
     'lan.failed': 'اشتراک روی شبکهٔ محلی شروع نشد.',
     'lan.recheck': 'بررسی دوباره',
+    // Firewall. The single most common reason a phone cannot connect on a fresh machine.
+    'lan.firewallBlocked':
+      'فایروال ویندوز این برنامه را مسدود کرده است. همان پنجره‌ای است که بار اول پرسید «اجازه می‌دهید؟» و بسته شد. تا باز نشود هیچ گوشی‌ای وصل نمی‌شود.',
+    'lan.firewallNoRule':
+      'فایروال ویندوز هنوز برای این برنامه قانونی ندارد. اگر گوشی وصل نمی‌شود، همین‌جا اجازه بدهید.',
+    'lan.firewallAllowed': 'فایروال ویندوز اجازه داده است.',
+    'lan.firewallAllow': 'اجازه دادن در فایروال',
+    'lan.firewallAllowHint': 'ویندوز یک بار تأیید مدیر می‌خواهد. فقط شبکه‌های خصوصی؛ نه وای‌فای عمومی.',
+    'lan.firewallFixed': 'فایروال اجازه داد.',
+    'lan.firewallNotFixed': 'فایروال هنوز اجازه نداده است. شاید تأیید مدیر رد شد.',
+
+    // ── general settings ───────────────────────────────────────────────────────────
+    'settings.general': 'عمومی',
+    'settings.launchOnStartup': 'اجرا هنگام ورود به ویندوز',
+    'settings.launchOnStartupHint': 'تا گوشی‌ها بعد از هر بار روشن شدن رایانه بدون کاری وصل شوند.',
+    'settings.launchOnStartupPortable': 'در نسخهٔ پرتابل ممکن نیست؛ نسخهٔ نصبی این گزینه را دارد.',
+    'settings.startMinimised': 'شروع بی‌سروصدا در tray',
+    'settings.startMinimisedHint': 'پنجره باز نمی‌شود؛ سرور از همان لحظه در حال کار است.',
+    'settings.language': 'زبان',
 
     // ── settings (screen 14) ───────────────────────────────────────────────────────
     'settings.level.info': 'اطلاع',
@@ -284,6 +303,23 @@ export const copy = {
       'This computer has no address on a local network yet. Check the Wi-Fi or the network cable — the address appears here as soon as it connects.',
     'lan.failed': 'Sharing on the local network did not start.',
     'lan.recheck': 'Check again',
+    'lan.firewallBlocked':
+      'Windows Firewall is blocking this app. That is the first-run “Allow access?” prompt, closed without an answer. No phone can connect until it is lifted.',
+    'lan.firewallNoRule':
+      'Windows Firewall has no rule for this app yet. If a phone cannot connect, allow it here.',
+    'lan.firewallAllowed': 'Windows Firewall allows it.',
+    'lan.firewallAllow': 'Allow in the firewall',
+    'lan.firewallAllowHint': 'Windows asks for administrator approval once. Private networks only, not public Wi-Fi.',
+    'lan.firewallFixed': 'The firewall now allows it.',
+    'lan.firewallNotFixed': 'The firewall still blocks it. The administrator prompt may have been declined.',
+
+    'settings.general': 'General',
+    'settings.launchOnStartup': 'Start with Windows',
+    'settings.launchOnStartupHint': 'So phones connect after every restart without anyone touching the computer.',
+    'settings.launchOnStartupPortable': 'Not possible in the portable build; the installed build has this.',
+    'settings.startMinimised': 'Start quietly in the tray',
+    'settings.startMinimisedHint': 'No window opens; the server is serving from the first moment.',
+    'settings.language': 'Language',
 
     'settings.level.info': 'Note',
     'settings.level.warn': 'Warning',

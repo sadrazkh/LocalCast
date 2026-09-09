@@ -61,6 +61,12 @@ export const appFa = {
   'servers.unpair': 'جدا کردن این دستگاه',
   'servers.unpairConfirm': 'دسترسی این گوشی به سرور بسته می‌شود و باید دوباره جفت شود.',
   'servers.davPassword': 'رمز WebDAV این دستگاه',
+  'library.copyLink': 'رونوشت نشانی برای VLC',
+  'library.copyLinkDone': 'نشانی کپی شد — در VLC «باز کردن جریان شبکه» را بزنید و بچسبانید',
+  'library.copyLinkFailed': 'کپی نشد؛ نشانی را از صفحهٔ پخش بردارید',
+  'servers.alsoAt': 'نشانی‌های دیگر همین سرور',
+  'servers.alsoAtHint':
+    'اگر نشانی بالا یک روز کار نکرد (مثلاً IP رایانه عوض شد)، یکی از این‌ها را در مرورگر باز کنید. نامی که به .local ختم می‌شود معمولاً پایدارتر است.',
   'servers.davTitle': 'اتصال از پلیر یا فایل‌منیجر (WebDAV)',
   'servers.davHint':
     'این نشانی را در VLC («باز کردن جریان شبکه»)، برنامهٔ Files آیفون («Connect to Server») یا هر پلیری که WebDAV می‌فهمد بچسبانید. نام کاربری و رمز داخل خودِ نشانی هست؛ اگر جداگانه پرسید، از دو خط پایین.',
@@ -197,6 +203,12 @@ export const appEn: AppMessages = {
   'servers.unpair': 'Unpair this device',
   'servers.unpairConfirm': 'This phone loses access to the server and has to be paired again.',
   'servers.davPassword': 'This device’s WebDAV password',
+  'library.copyLink': 'Copy link for VLC',
+  'library.copyLinkDone': 'Address copied — in VLC choose “Open Network Stream” and paste',
+  'library.copyLinkFailed': 'Could not copy; take the address from the player screen',
+  'servers.alsoAt': 'Other addresses for this server',
+  'servers.alsoAtHint':
+    'If the address above stops working one day (the computer’s IP changed, say), open one of these in the browser instead. The name ending in .local is usually the steadier one.',
   'servers.davTitle': 'Connect from a player or file manager (WebDAV)',
   'servers.davHint':
     'Paste this address into VLC (“Open Network Stream”), the iPhone Files app (“Connect to Server”), or any player that speaks WebDAV. The username and password are inside the address; if a client asks for them separately, they are the two lines below.',

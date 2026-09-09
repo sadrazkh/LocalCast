@@ -59,6 +59,10 @@ export const IPC = {
   lanStatus: 'lan:status',
   lanRefresh: 'lan:refresh',
   lanSetEncrypted: 'lan:set-encrypted',
+  lanFirewall: 'lan:firewall',
+  lanAllowFirewall: 'lan:allow-firewall',
+  appPreferences: 'app:preferences',
+  appSetPreferences: 'app:set-preferences',
 
   // server events, pushed to every window
   serverEvent: 'server:event',
@@ -73,6 +77,23 @@ export const IPC = {
   updateInstall: 'update:install',
   updateProgress: 'update:progress',
 } as const;
+
+/** Mirrors `FirewallState` in `main/firewall.ts`. */
+export interface FirewallInfo {
+  state: 'allowed' | 'blocked' | 'no-rule' | 'unavailable';
+  detail: string | null;
+}
+
+/** The handful of preferences the panel edits directly. Nothing secret, nothing network. */
+export interface Preferences {
+  launchOnStartup: boolean;
+  startMinimised: boolean;
+  locale: 'fa' | 'en';
+  /** A portable build cannot register a login item; the switch is shown disabled with a reason. */
+  portable: boolean;
+}
+
+export type PreferencesPatch = Partial<Pick<Preferences, 'launchOnStartup' | 'startMinimised' | 'locale'>>;
 
 /** Mirrors the server's `LanStatus`; see `apps/server/src/index.ts`. */
 export interface LanShareStatus {
@@ -213,6 +234,14 @@ export interface DesktopApi {
      * only the advertised address changes.
      */
     setEncrypted(encrypted: boolean): Promise<LanShareStatus>;
+    /**
+     * What Windows Defender Firewall says about this program. Read-only and unprivileged. The
+     * single most common reason a phone cannot connect on a fresh machine, and the one the app
+     * previously had no way to see.
+     */
+    firewall(): Promise<FirewallInfo>;
+    /** Removes a block rule and adds the allow rule. One UAC prompt, only on the user's click. */
+    allowFirewall(): Promise<FirewallInfo>;
   };
   printers: {
     list(): Promise<Printer[]>;
@@ -231,6 +260,8 @@ export interface DesktopApi {
   };
   app: {
     info(): Promise<AppInfo>;
+    preferences(): Promise<Preferences>;
+    setPreferences(patch: PreferencesPatch): Promise<Preferences>;
     /**
      * Every event the in-process server publishes — a device claiming a code, an approval, a
      * revocation, a grant changing, a folder going away. Pushed, not polled: the panel's lists

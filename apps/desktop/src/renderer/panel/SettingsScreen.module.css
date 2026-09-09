@@ -123,3 +123,10 @@
   color: var(--lc-text-dim);
   font-size: var(--lc-fs-2xs);
 }
+
+.general {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lc-space-4);
+  max-width: 36rem;
+}

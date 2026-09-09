@@ -46,6 +46,11 @@ export interface DeviceRouterDeps {
   permissions: SqlPermissionService;
   /** Where a device's own account of what its browser granted it is kept. */
   capabilities: CapabilityReports;
+  /**
+   * Every local-network origin the server answers on, best first. A getter, because the
+   * address follows the machine and the list is only right at the moment it is asked for.
+   */
+  lanOrigins?: () => string[];
 }
 
 const pairStatusQuerySchema = z.object({ ticket: z.string().min(1) });
@@ -148,6 +153,7 @@ export function createDeviceRouter(deps: DeviceRouterDeps): Router {
           name: config.serverName,
           version: config.version,
           host: config.publicHost,
+          addresses: deps.lanOrigins?.() ?? [],
         },
         permissions: permissionsFor(device.id),
       });

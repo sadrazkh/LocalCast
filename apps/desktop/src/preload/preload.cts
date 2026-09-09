@@ -48,6 +48,10 @@ const IPC = {
   lanStatus: 'lan:status',
   lanRefresh: 'lan:refresh',
   lanSetEncrypted: 'lan:set-encrypted',
+  lanFirewall: 'lan:firewall',
+  lanAllowFirewall: 'lan:allow-firewall',
+  appPreferences: 'app:preferences',
+  appSetPreferences: 'app:set-preferences',
   printersList: 'printers:list',
   printersRefresh: 'printers:refresh',
   printerSetEnabled: 'printer:set-enabled',
@@ -108,6 +112,8 @@ const api = {
     status: () => ipcRenderer.invoke(IPC.lanStatus),
     refresh: () => ipcRenderer.invoke(IPC.lanRefresh),
     setEncrypted: (encrypted: boolean) => ipcRenderer.invoke(IPC.lanSetEncrypted, encrypted),
+    firewall: () => ipcRenderer.invoke(IPC.lanFirewall),
+    allowFirewall: () => ipcRenderer.invoke(IPC.lanAllowFirewall),
   },
   printers: {
     list: () => ipcRenderer.invoke(IPC.printersList),
@@ -141,6 +147,8 @@ const api = {
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),
+    preferences: () => ipcRenderer.invoke(IPC.appPreferences),
+    setPreferences: (patch: unknown) => ipcRenderer.invoke(IPC.appSetPreferences, patch),
     onServerEvent: (handler: (event: unknown) => void) => {
       const listener = (_e: unknown, event: unknown) => handler(event);
       ipcRenderer.on(IPC.serverEvent, listener);

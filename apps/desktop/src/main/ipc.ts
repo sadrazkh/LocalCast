@@ -2,11 +2,15 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import QRCode from 'qrcode';
 import { networkConfigSchema, type EdgeStatus, type NetworkConfig } from '@localcast/contract';
 import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
+import { z } from 'zod';
 import {
   IPC,
   type AppInfo,
+  type FirewallInfo,
   type LanShareStatus,
   type PairingMintResult,
+  type Preferences,
+  type PreferencesPatch,
   type RedactedNetworkConfig,
 } from '../shared/ipc.js';
 import type { NetEdge } from './netedge.js';
@@ -42,6 +46,10 @@ export interface IpcDeps {
   refreshLanAddress: () => boolean;
   /** Store the user's choice and apply it to the running server. */
   setLanEncrypted: (encrypted: boolean) => Promise<LanShareStatus>;
+  firewall: () => Promise<FirewallInfo>;
+  allowFirewall: () => Promise<FirewallInfo>;
+  preferences: () => Preferences;
+  setPreferences: (patch: PreferencesPatch) => Preferences;
   restartEdge: (config: NetworkConfig) => Promise<EdgeStatus>;
 }
 
@@ -233,6 +241,8 @@ export function registerIpc(deps: IpcDeps): void {
   // sidecar, and stays fully available while remote access is switched off.
   ipcMain.handle(IPC.lanStatus, () => deps.lanStatus());
   ipcMain.handle(IPC.lanRefresh, () => deps.refreshLanAddress());
+  ipcMain.handle(IPC.lanFirewall, () => deps.firewall());
+  ipcMain.handle(IPC.lanAllowFirewall, () => deps.allowFirewall());
   ipcMain.handle(IPC.lanSetEncrypted, (_e, encrypted: unknown) => {
     // Validated rather than trusted: this is the call that decides whether the Wi-Fi traffic is
     // readable by everyone else on it, and a truthy string must not be able to turn it off.
@@ -276,6 +286,21 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.activityList, (_e, limit?: number) =>
     operator().get(`/activity?limit=${Math.min(Math.max(limit ?? 100, 1), 500)}`),
   );
+
+  ipcMain.handle(IPC.appPreferences, () => deps.preferences());
+  ipcMain.handle(IPC.appSetPreferences, (_e, raw: unknown) => {
+    // A whitelist, parsed: the renderer must not be able to write arbitrary keys into the
+    // config file through this channel.
+    const patch = z
+      .object({
+        launchOnStartup: z.boolean().optional(),
+        startMinimised: z.boolean().optional(),
+        locale: z.enum(['fa', 'en']).optional(),
+      })
+      .strict()
+      .parse(raw);
+    return deps.setPreferences(patch);
+  });
 
   ipcMain.handle(IPC.wizardComplete, () => {
     appConfig.update({ setupComplete: true });

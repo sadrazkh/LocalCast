@@ -100,6 +100,27 @@ export class SessionManager {
   }
 
   /**
+   * Remember the other origins the server said it answers on.
+   *
+   * Written through to the store, because the moment these matter is the next launch after the
+   * laptop's address has changed — and a list held only in memory would not have survived to it.
+   * No event: nothing on screen changes when a fallback list is refreshed.
+   */
+  async updateAlternates(origins: readonly string[]): Promise<void> {
+    const session = await this.load();
+    if (session === null) return;
+    const next = [...new Set(origins.map(normaliseBaseUrl))].filter((o) => o !== session.baseUrl);
+    const same =
+      session.altBaseUrls !== undefined &&
+      session.altBaseUrls.length === next.length &&
+      session.altBaseUrls.every((o, i) => o === next[i]);
+    if (same) return;
+    const updated: StoredSession = { ...session, altBaseUrls: next };
+    await this.#store.write(updated);
+    this.#session = updated;
+  }
+
+  /**
    * Return a session whose access token will still be valid for the next few minutes,
    * refreshing first if it will not. `null` when this device has never been paired.
    */

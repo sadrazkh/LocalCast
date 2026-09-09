@@ -230,6 +230,10 @@ async function startHarness(edge: EdgeStub): Promise<Harness> {
     lanStatus: () => server.lanStatus(),
     refreshLanAddress: () => server.refreshLanAddress(),
     setLanEncrypted: (encrypted: boolean) => server.setLanPlaintext(!encrypted),
+    firewall: () => Promise.resolve({ state: 'unavailable' as const, detail: 'test' }),
+    allowFirewall: () => Promise.resolve({ state: 'unavailable' as const, detail: 'test' }),
+    preferences: () => ({ launchOnStartup: false, startMinimised: true, locale: 'fa' as const, portable: false }),
+    setPreferences: () => ({ launchOnStartup: false, startMinimised: true, locale: 'fa' as const, portable: false }),
     // Wired exactly as apps/desktop/src/main/index.ts wires it.
     restartEdge: async (config: NetworkConfig) => {
       restarts.push(config);

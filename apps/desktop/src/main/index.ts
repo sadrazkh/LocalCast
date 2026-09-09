@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join } from 'node:path';
 import type { EdgeStatus, NetworkConfig } from '@localcast/contract';
 import { REMOTE_ACCESS_ENABLED } from '../shared/features.js';
+import type { Preferences } from '../shared/ipc.js';
 import { AppConfigStore, configPathFor, remoteAccessOn } from './appConfig.js';
 import { broadcastEdgeStatus, broadcastServerEvent, registerIpc } from './ipc.js';
+import { allowThroughFirewall, inspectFirewall } from './firewall.js';
 import { installMainLog } from './mainLog.js';
 import { NetEdge, NetEdgeBinaryMissing } from './netedge.js';
 import { OperatorClient } from './operatorClient.js';
@@ -264,6 +266,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const appConfig = new AppConfigStore(configPathFor(p.dataDir));
+  applyLoginItem(appConfig.get(), p.portable);
 
   // Registered before the gate, not after. The prerequisites window is opened by the gate
   // below, and a window whose every call answers "No handler registered" is precisely the
@@ -295,6 +298,14 @@ async function bootstrap(): Promise<void> {
         error: null,
       },
     refreshLanAddress: () => serverHandle?.refreshLanAddress() ?? false,
+    firewall: () => inspectFirewall(process.execPath),
+    allowFirewall: () => allowThroughFirewall(process.execPath),
+    preferences: () => preferencesOf(appConfig.get(), p.portable),
+    setPreferences: (patch) => {
+      const next = appConfig.update(patch);
+      applyLoginItem(next, p.portable);
+      return preferencesOf(next, p.portable);
+    },
     setLanEncrypted: async (encrypted: boolean) => {
       // Stored first, so the answer survives a restart, then applied to the running server. The
       // stored value is the user's decision; the listener is only its consequence.
@@ -418,9 +429,10 @@ async function bootstrap(): Promise<void> {
         message: question,
         detail,
         buttons: [approveLabel, rejectLabel],
-        defaultId: 0,
-        // Escape and the window's close button both mean "do not let this device in". The safe
-        // answer is the one that happens when somebody walks away.
+        // Enter, Escape and the close button all mean "do not let this device in". Approving
+        // takes a deliberate click: a person mid-sentence in another window must not grant a
+        // stranger's phone access to their files by hitting Enter at the wrong moment.
+        defaultId: 1,
         cancelId: 1,
         noLink: true,
       });
@@ -552,6 +564,34 @@ async function bootstrap(): Promise<void> {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openPanel();
   });
+}
+
+function preferencesOf(
+  config: { launchOnStartup: boolean; startMinimised: boolean; locale: 'fa' | 'en' },
+  portable: boolean,
+): Preferences {
+  return {
+    launchOnStartup: config.launchOnStartup,
+    startMinimised: config.startMinimised,
+    locale: config.locale,
+    portable,
+  };
+}
+
+/**
+ * Register, or unregister, this executable to start with Windows.
+ *
+ * `launchOnStartup` had been a stored preference with nothing reading it: the switch existed
+ * and did nothing. A portable build is skipped on purpose: it unpacks to a fresh temporary
+ * directory each launch, so a login item would point at a path that no longer exists tomorrow.
+ */
+function applyLoginItem(config: { launchOnStartup: boolean }, portable: boolean): void {
+  if (portable || isDev) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: config.launchOnStartup, path: process.execPath });
+  } catch (err) {
+    console.warn('[main] could not update the login item:', err);
+  }
 }
 
 function openPanel(route = '/panel'): void {

@@ -4,6 +4,7 @@ import { ConnectionMonitor } from './connection.js';
 import { EventClient, TransportSseChannel } from './events.js';
 import type { SseChannel } from './events.js';
 import { OfflineCache } from './offline.js';
+import { OriginFailoverTransport } from './origin-failover.js';
 import { runPairing } from './pairing.js';
 import type { PairingPhase } from './pairing.js';
 import type { CacheStore, Clock, HttpTransport, Logger, StoredSession, TokenStore } from './ports.js';
@@ -30,6 +31,7 @@ export * from './offline.js';
  * time — a platform that supplies its own transport never constructs either one.
  */
 export * from './fetch-transport.js';
+export * from './origin-failover.js';
 export * from './system-clock.js';
 export * from './event-source-channel.js';
 
@@ -43,6 +45,15 @@ export interface CreateClientOptions {
   cacheStore?: CacheStore;
   /** Override the SSE channel, e.g. on a platform whose transport cannot stream. */
   sseChannel?: SseChannel;
+  /**
+   * Follow the server to its other addresses when the paired one stops answering.
+   *
+   * Off by default, and opt-in because it only makes sense where the paired address can change
+   * under a stable app — a phone on Wi-Fi whose server got a new DHCP lease. The alternates are
+   * the origins the server reports at `/me`, kept on the session; see `OriginFailoverTransport`
+   * for what it can and cannot do (it moves the API, not the page).
+   */
+  originFailover?: boolean;
 }
 
 export interface PairInput {
@@ -83,9 +94,29 @@ export interface LocalCastClient {
  * stale, the SSE stream feeds both, and a revocation anywhere tears all of it down at once.
  */
 export function createClient(options: CreateClientOptions): LocalCastClient {
-  const { transport, tokenStore, clock, baseUrl, logger } = options;
+  const { transport: rawTransport, tokenStore, clock, baseUrl, logger } = options;
 
-  const session = new SessionManager({ transport, tokenStore, clock, baseUrl, logger });
+  // The session is read for the alternates, so it is built on the raw transport — the failover
+  // wrapper needs the session, and the session must not need the wrapper. Everything else in the
+  // client is built on `transport`, which is the wrapper when failover is on.
+  const session = new SessionManager({ transport: rawTransport, tokenStore, clock, baseUrl, logger });
+  const failover = options.originFailover
+    ? new OriginFailoverTransport({
+        inner: rawTransport,
+        primary: baseUrl,
+        // Peek, not load: this runs inside a request that is already failing, and must not itself
+        // await a store read. An empty list simply means "primary only", which is the old behaviour.
+        alternates: () => session.peek()?.altBaseUrls ?? [],
+        ...(logger === undefined ? {} : { logger }),
+      })
+    : null;
+  const transport = failover ?? rawTransport;
+
+  if (failover) {
+    // A sign-out returns to the address the app was loaded from, so the next pairing is not tried
+    // against an origin the previous device happened to end on.
+    session.events.on('signed-out', () => failover.reset());
+  }
   const connection = new ConnectionMonitor({ clock });
 
   const api = new ApiClient({

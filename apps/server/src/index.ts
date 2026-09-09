@@ -245,6 +245,58 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     return { url: `https://${host}:${securePort}`, fingerprint256: cert.fingerprint256 };
   }
 
+  /**
+   * Every address a device on the local network can reach this server at, best first.
+   *
+   * The published endpoint leads; then the same listener under the machine's `.local` name,
+   * which survives a DHCP lease moving; then the other listener, if it is up. Reported by `/me`
+   * so a phone can keep a fallback list.
+   */
+  function currentLanOrigins(): string[] {
+    const access = buildLanAccess({
+      certificate: lanCertificateNow(),
+      tlsPort: portOf(lanServer),
+      plaintextPort: portOf(plaintextServer),
+    });
+    const published = currentLanEndpoint()?.url;
+    const all = [...access.secure, ...access.plaintext].map((a) => a.url);
+    const ordered = published === undefined ? all : [published, ...all.filter((u) => u !== published)];
+    return [...new Set(ordered)];
+  }
+
+  /**
+   * Is this one of *this server's* origins — scheme, name and port, all three?
+   *
+   * The name alone is not enough. `http://192.168.8.92:1` shares a hostname with this server and
+   * is a page served by something else entirely on the same machine; a hostname check would have
+   * allowed it. So the name must be one the certificate claims (or loopback), and the scheme and
+   * port must be one of the listeners actually bound right now — a match on the whole origin,
+   * which is what an origin is.
+   */
+  function isOwnOrigin(origin: string): boolean {
+    let url: URL;
+    try {
+      url = new URL(origin);
+    } catch {
+      return false;
+    }
+    const host = url.hostname.toLowerCase();
+    const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
+
+    const listeners: { scheme: string; port: number | null }[] = [
+      { scheme: 'https:', port: portOf(lanServer) },
+      { scheme: 'http:', port: portOf(plaintextServer) },
+      // The loopback listener, which is where the desktop's own renderer and netedge talk to us.
+      { scheme: 'http:', port: portOf(server) },
+    ];
+    const onOurListener = listeners.some((l) => l.port !== null && l.scheme === url.protocol && l.port === port);
+    if (!onOurListener) return false;
+
+    if (host === 'localhost' || host === '127.0.0.1') return true;
+    const cert = lanCertificateNow();
+    return cert !== null && cert.hosts.some((h) => h.toLowerCase() === host);
+  }
+
   /** Whether local sharing is working, and which of the three ways it is not when it is not. */
   function currentLanStatus(): LanStatus {
     const cert = lanCertificateNow();
@@ -285,6 +337,37 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
 
   app.use(express.json({ limit: '1mb' }));
   app.use(peerContext());
+  /**
+   * Cross-origin requests between this server's *own* origins, and no others.
+   *
+   * A phone pairs at `https://192.168.8.92:8420` and the app is served from there. When the
+   * laptop's address changes, the installed app still opens — from the service worker's cache —
+   * at the old origin, and its requests fail over to `https://sadra.local:8420`. That is a
+   * cross-origin request from one of our addresses to another, and without this header the
+   * browser refuses it before the server ever sees it. The allow-list is the certificate's SAN:
+   * exactly the names this machine has claimed to be, and nothing a stranger's page could use.
+   */
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (typeof origin !== 'string' || !isOwnOrigin(origin)) {
+      next();
+      return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'authorization, content-type, range, last-event-id, x-requested-with',
+    );
+    res.setHeader('Access-Control-Expose-Headers', 'content-range, accept-ranges, etag, content-length');
+    res.setHeader('Access-Control-Max-Age', '600');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
   // Nothing below this line is reachable without the secret `netedge` injects — unless the
   // operator has turned on local-network sharing, where there is no edge to inject it and the
   // device token is the credential that matters.
@@ -305,7 +388,17 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
 
   app.use(
     API_PREFIX,
-    createDeviceRouter({ ctx, config, tokens, pairing, limiter, files, permissions, capabilities }),
+    createDeviceRouter({
+      ctx,
+      config,
+      tokens,
+      pairing,
+      limiter,
+      files,
+      permissions,
+      capabilities,
+      lanOrigins: currentLanOrigins,
+    }),
   );
 
   /**

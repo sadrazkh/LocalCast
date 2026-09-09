@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Badge,
   Button,
@@ -128,6 +128,19 @@ function ServerList() {
 
   const me = useAsync(async (signal) => client.api.me({ signal }), [client]);
 
+  // Remember the other origins this server answers on, so they survive to the next launch — the
+  // launch where the laptop's address may have changed. Displayed below as addresses the user
+  // can type, because a browser cannot follow them on its own without losing the paired session
+  // (the token store is per-origin).
+  useEffect(() => {
+    const addresses = me.value?.server.addresses;
+    if (addresses && addresses.length > 0) void client.session.updateAlternates(addresses);
+  }, [client, me.value?.server.addresses]);
+
+  const alternates = (me.value?.server.addresses ?? []).filter(
+    (origin) => origin !== client.session.peek()?.baseUrl,
+  );
+
   if (session === null) {
     return (
       <Screen title={at('servers.title')}>
@@ -186,6 +199,20 @@ function ServerList() {
           <span>{at('remote.title')}</span>
           <ChevronEndIcon size={16} />
         </a>
+
+        {alternates.length === 0 ? null : (
+          <Panel title={at('servers.alsoAt')} description={at('servers.alsoAtHint')}>
+            <div className={styles.rows}>
+              {alternates.map((origin) => (
+                <div key={origin} className={styles.row}>
+                  <span className={`${styles.value} ${styles.mono}`} data-selectable="true">
+                    {origin}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
 
         <Panel title={at('servers.davTitle')} description={at('servers.davHint')}>
           {/*
@@ -334,6 +361,19 @@ function NetworkPanel() {
 
   useServerEvent('connection', (event) => setEdge(event.state));
   const me = useAsync(async (signal) => client.api.me({ signal }), [client]);
+
+  // Remember the other origins this server answers on, so they survive to the next launch — the
+  // launch where the laptop's address may have changed. Displayed below as addresses the user
+  // can type, because a browser cannot follow them on its own without losing the paired session
+  // (the token store is per-origin).
+  useEffect(() => {
+    const addresses = me.value?.server.addresses;
+    if (addresses && addresses.length > 0) void client.session.updateAlternates(addresses);
+  }, [client, me.value?.server.addresses]);
+
+  const alternates = (me.value?.server.addresses ?? []).filter(
+    (origin) => origin !== client.session.peek()?.baseUrl,
+  );
 
   const host = me.value?.server.host ?? session?.host ?? '';
   /**
