@@ -306,6 +306,33 @@ describe('GET', () => {
   it('404s a file that is not there', async () => {
     expect((await dav(`/dav/${folderId}/missing.mp4`, { method: 'GET' })).status).toBe(404);
   });
+
+  it('records one activity row for a whole playback, not one per range request', async () => {
+    /**
+     * A player scrubbing an MKV sends dozens of ranged GETs a second. Each one was a synchronous
+     * SQLite INSERT sitting between the seek and its first byte, and the feed — capped at five
+     * thousand rows — became nothing but `dav.get` lines. The main API throttles its equivalent
+     * write to once a minute; this holds the WebDAV path to the same rule.
+     */
+    const before = harness.activity.filter((row) => row.kind === 'dav.get').length;
+    for (let i = 0; i < 25; i += 1) {
+      const res = await dav(`/dav/${streamFolderId}/clip.mp4`, {
+        method: 'GET',
+        headers: { range: `bytes=${i % 8}-${(i % 8) + 1}` },
+      });
+      expect(res.status).toBe(206);
+    }
+    const after = harness.activity.filter((row) => row.kind === 'dav.get').length;
+    expect(after - before).toBe(1);
+  });
+
+  it('still records a different file, so the feed says what was actually opened', async () => {
+    const before = harness.activity.filter((row) => row.kind === 'dav.get').length;
+    await dav(`/dav/${streamFolderId}/clip.mp4`, { method: 'GET', headers: { range: 'bytes=0-1' } });
+    await dav(`/dav/${folderId}/season%201/ep01.mp4`, { method: 'GET', headers: { range: 'bytes=0-1' } });
+    const after = harness.activity.filter((row) => row.kind === 'dav.get').length;
+    expect(after - before).toBe(2);
+  });
 });
 
 describe('path handling', () => {

@@ -319,7 +319,19 @@ async function getOrHead(
   mode: AccessMode,
   createStream: CreateStream | undefined,
 ): Promise<void> {
+  const startedAt = Date.now();
   const resolved = await ctx.files.resolve(target.folderId, target.relPath);
+  const resolvedAt = Date.now();
+  if (resolvedAt - startedAt > 250) {
+    // Resolving is a realpath and a stat. On an SSD that is a millisecond; a quarter of a second
+    // means the file is on a drive that is spinning up, a share that is round-tripping, or a
+    // path the antivirus is holding — and it is the one number that tells those apart from Wi-Fi.
+    ctx.log.warn('slow to open a file for a device', {
+      path: target.relPath,
+      resolveMs: resolvedAt - startedAt,
+      note: 'the delay is on this computer, before any byte is sent; check the drive the folder is on',
+    });
+  }
   if (resolved.isDir) {
     res.setHeader('Allow', 'OPTIONS, PROPFIND');
     res.status(405).type('text/plain; charset=utf-8').end('This is a collection.\n');
@@ -335,11 +347,22 @@ async function getOrHead(
   // and not a security boundary, since a client that can ask for ranges can reassemble.
   ctx.permissions.assertCan(device.id, target.folderId, wantsRange || isHead ? 'stream' : 'download');
 
-  ctx.activity.record(isHead ? 'dav.head' : 'dav.get', device.id, {
-    folderId: target.folderId,
-    path: target.relPath,
-    ranged: wantsRange,
-  });
+  /**
+   * One activity row per playback, not one per request.
+   *
+   * A player scrubbing an MKV — cues at the end, a seek to every cluster it wants — sends
+   * dozens of ranged GETs a second, and each of those was a synchronous SQLite INSERT on the
+   * request path plus a row in a feed capped at five thousand. The feed became nothing but
+   * `dav.get` lines, and the writes sat between a seek and its first byte. The main API throttles
+   * its own per-request write to once a minute for exactly this reason; this is the same rule.
+   */
+  if (recentlyRecorded.note(`${device.id}:${target.folderId}:${target.relPath}`)) {
+    ctx.activity.record(isHead ? 'dav.head' : 'dav.get', device.id, {
+      folderId: target.folderId,
+      path: target.relPath,
+      ranged: wantsRange,
+    });
+  }
 
   await serveRange(
     req,
@@ -355,6 +378,29 @@ async function getOrHead(
     createStream ? { createStream } : {},
   );
 }
+
+/**
+ * Keys seen in the last minute. Bounded: an entry expires on its next lookup after the window,
+ * and the map is swept whenever it grows past a few thousand, so a long session cannot grow it
+ * without limit.
+ */
+class RecentKeys {
+  readonly #seen = new Map<string, number>();
+  constructor(private readonly windowMs: number) {}
+
+  /** True the first time a key is seen within the window; false while it is still fresh. */
+  note(key: string, now = Date.now()): boolean {
+    const last = this.#seen.get(key);
+    if (last !== undefined && now - last < this.windowMs) return false;
+    this.#seen.set(key, now);
+    if (this.#seen.size > 4096) {
+      for (const [k, at] of this.#seen) if (now - at >= this.windowMs) this.#seen.delete(k);
+    }
+    return true;
+  }
+}
+
+const recentlyRecorded = new RecentKeys(60_000);
 
 // ── path parsing ─────────────────────────────────────────────────────────────
 

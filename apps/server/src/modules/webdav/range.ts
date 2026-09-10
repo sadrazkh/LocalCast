@@ -14,7 +14,19 @@ import type { Request, Response } from 'express';
 
 export type CreateStream = (path: string, opts: { start: number; end: number }) => Readable;
 
-const defaultCreateStream: CreateStream = (path, opts) => createReadStream(path, opts);
+/**
+ * 1 MiB reads, not Node's 64 KiB default.
+ *
+ * A native player reads a film as one long ranged GET, and every chunk the stream yields is
+ * one read syscall and one TLS record. At 64 KiB a 40 Mbit/s remux is eighty reads a second;
+ * on a USB drive or an SMB share — where "some films" live, the ones that stutter while the
+ * ones on the SSD play — each of those reads is a round trip. Sixteen times fewer of them is
+ * the difference. The cost is a megabyte of memory per open stream, which is nothing.
+ */
+export const STREAM_HIGH_WATER_MARK = 1024 * 1024;
+
+const defaultCreateStream: CreateStream = (path, opts) =>
+  createReadStream(path, { ...opts, highWaterMark: STREAM_HIGH_WATER_MARK });
 
 export interface RangeTarget {
   absPath: string;

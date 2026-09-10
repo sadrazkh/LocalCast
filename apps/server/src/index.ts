@@ -437,17 +437,17 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
    * another desktop sends over the Wi-Fi — bearer tokens, file names, the file bytes
    * themselves — is encrypted, which it was not when this listener spoke HTTP.
    */
-  const server = http.createServer(app);
+  const server = tuneForMedia(http.createServer(app));
   const lanServer =
     initialCert === null
       ? null
-      : https.createServer({ key: initialCert.keyPem, cert: initialCert.certPem }, (req, res) => {
+      : tuneForMedia(https.createServer({ key: initialCert.keyPem, cert: initialCert.certPem }, (req, res) => {
           // Marks the request before Express ever sees it, so `edgeSecretGuard` can waive the
           // edge secret for this listener alone. A property on the request object, not a
           // header: a client has no way to set it.
           (req as http.IncomingMessage & { viaLan?: boolean }).viaLan = true;
           app(req, res);
-        });
+        }));
 
   /**
    * The unencrypted fallback, for devices whose browser will not use the encrypted listener at
@@ -458,7 +458,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
    * would be a way to *start* sharing without ever choosing to.
    */
   let plaintextServer: http.Server | null =
-    config.lan && config.lanPlaintext ? createPlaintextListener({ handler: app, log }) : null;
+    config.lan && config.lanPlaintext ? tuneForMedia(createPlaintextListener({ handler: app, log })) : null;
 
   let listening = false;
   let lanListening = false;
@@ -598,7 +598,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
       if (!config.lan) return currentLanStatus();
 
       if (enabled && plaintextServer === null) {
-        const next = createPlaintextListener({ handler: app, log });
+        const next = tuneForMedia(createPlaintextListener({ handler: app, log }));
         try {
           const addr = await bindPreferring(next, config.lanPlaintextPort, '0.0.0.0', log);
           plaintextServer = next;
@@ -647,6 +647,28 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
       db.close();
     },
   };
+}
+
+/**
+ * Socket timeouts sized for a media player, not a web page.
+ *
+ * Node closes an idle keep-alive connection after five seconds. A player reading a film does
+ * not read steadily: it fills a buffer, goes quiet for ten or twenty seconds, then wants the
+ * next stretch — and by then the socket is gone, so every burst starts with a new connection
+ * and, on the encrypted listener, a new TLS handshake. On a phone that is a visible hitch at
+ * each buffer refill, on some files and not others depending only on how big a buffer the
+ * player chose for that bitrate. Two minutes keeps the socket through any refill a player
+ * would do. `headersTimeout` has to stay above `keepAliveTimeout`, or Node ends the connection
+ * while it is legitimately idle between requests.
+ *
+ * No overall socket timeout: a paused player holding a ranged GET open for an hour is not a
+ * stuck connection, it is a paused player.
+ */
+function tuneForMedia<T extends http.Server | https.Server>(listener: T): T {
+  listener.keepAliveTimeout = 120_000;
+  listener.headersTimeout = 125_000;
+  listener.timeout = 0;
+  return listener;
 }
 
 /** `listen`, promised, with the `error` listener removed once it can no longer fire. */

@@ -45,6 +45,8 @@
 | The approval dialog defaults to reject: Enter, Escape and the close button all decline | `apps/desktop/src/main/index.ts` (pairing prompt `ask`) | the `defaultId`/`cancelId` pair at the call, with its reason; the prompt's own logic is held by `apps/desktop/src/main/__tests__/pairingPrompt.test.ts` |
 | Windows Firewall blocking this app is detected and repairable from the panel, not left as a silent timeout | `apps/desktop/src/main/firewall.ts` | `apps/desktop/src/main/__tests__/firewall.test.ts` |
 | `launchOnStartup` actually registers a login item (installed build only), and every file in the library offers a copy-link-for-VLC action | `apps/desktop/src/main/index.ts` (`applyLoginItem`), `apps/pwa/src/routes/LibraryRoute.tsx` | exercised through the desktop and PWA suites |
+| A media player's idle socket is kept two minutes, not Node's five seconds, so a buffer refill does not begin with a reconnect and a TLS handshake | `apps/server/src/index.ts` (`tuneForMedia`) | `apps/server/test/mediaSockets.test.ts` |
+| A playback over WebDAV costs one activity row and 1 MiB reads, not a SQLite write and a 64 KiB read per range request | `apps/server/src/modules/webdav/index.ts` (`recentlyRecorded`), `range.ts` (`STREAM_HIGH_WATER_MARK`) | `apps/server/test/modules/webdav.test.ts` → *records one activity row for a whole playback* |
 | A second copy of the app never exits silently: a newer build replaces an older one, or asks — and every branch is written to `logs/main.log` | `apps/desktop/src/main/singleInstance.ts`, `mainLog.ts` | `apps/desktop/src/main/__tests__/singleInstance.test.ts` |
 
 ## The offline test, and why it is written the way it is
