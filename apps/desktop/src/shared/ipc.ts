@@ -69,6 +69,7 @@ export const IPC = {
 
   // app
   activityList: 'activity:list',
+  streamsList: 'streams:list',
   appInfo: 'app:info',
   wizardState: 'wizard:state',
   wizardComplete: 'wizard:complete',
@@ -77,6 +78,19 @@ export const IPC = {
   updateInstall: 'update:install',
   updateProgress: 'update:progress',
 } as const;
+
+/** Mirrors the server's `StreamInfo`, plus the device's name for the panel. */
+export interface LiveStream {
+  id: number;
+  deviceId: string | null;
+  deviceName: string | null;
+  name: string;
+  startedAt: number;
+  bytes: number;
+  mbps: number;
+  networkWaitRatio: number;
+  bottleneck: 'network' | 'source' | 'none';
+}
 
 /** Mirrors `FirewallState` in `main/firewall.ts`. */
 export interface FirewallInfo {
@@ -270,6 +284,8 @@ export interface DesktopApi {
      */
     onServerEvent(handler: (event: { type: string; [key: string]: unknown }) => void): () => void;
     activity(limit?: number): Promise<{ at: number; kind: string; deviceId: string | null; detail: unknown }[]>;
+    /** What is playing right now, with its rate and what it is waiting on. */
+    streams(): Promise<LiveStream[]>;
     completeWizard(): Promise<void>;
     openExternal(url: string): Promise<void>;
   };

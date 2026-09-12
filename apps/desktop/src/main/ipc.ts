@@ -286,6 +286,7 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.activityList, (_e, limit?: number) =>
     operator().get(`/activity?limit=${Math.min(Math.max(limit ?? 100, 1), 500)}`),
   );
+  ipcMain.handle(IPC.streamsList, () => operator().get('/streams'));
 
   ipcMain.handle(IPC.appPreferences, () => deps.preferences());
   ipcMain.handle(IPC.appSetPreferences, (_e, raw: unknown) => {

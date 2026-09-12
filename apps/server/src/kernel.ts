@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import type { StreamMonitor } from './streams.js';
 import type { Express, Request } from 'express';
 import type {
   AccessMode,
@@ -103,6 +104,11 @@ export interface ServerContext {
   events: EventBus;
   paths: ServerPaths;
   log: Logger;
+  /**
+   * Every response currently streaming a file, with its rate and what it is waiting on. Both
+   * range-serving paths register with it; the indexer yields to it; the panel reads it.
+   */
+  streams: StreamMonitor;
 }
 
 /**

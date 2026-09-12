@@ -56,6 +56,7 @@ const IPC = {
   printersRefresh: 'printers:refresh',
   printerSetEnabled: 'printer:set-enabled',
   activityList: 'activity:list',
+  streamsList: 'streams:list',
   appInfo: 'app:info',
   wizardComplete: 'wizard:complete',
   openExternal: 'app:open-external',
@@ -155,6 +156,7 @@ const api = {
       return () => ipcRenderer.removeListener(IPC.serverEvent, listener);
     },
     activity: (limit?: number) => ipcRenderer.invoke(IPC.activityList, limit),
+    streams: () => ipcRenderer.invoke(IPC.streamsList),
     completeWizard: () => ipcRenderer.invoke(IPC.wizardComplete),
     openExternal: (url: string) => ipcRenderer.invoke(IPC.openExternal, url),
   },

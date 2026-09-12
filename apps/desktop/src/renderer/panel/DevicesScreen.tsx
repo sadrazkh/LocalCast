@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIcon,
   DeviceRow,
@@ -14,8 +14,9 @@ import {
   useT,
 } from '@localcast/ui-kit';
 import type { AccessMode, DeviceSummary } from '@localcast/contract';
-import { getApi, withPermission } from '../lib/api.js';
+import { getApi, listStreams, withPermission } from '../lib/api.js';
 import type { ActivityEntry } from '../lib/api.js';
+import type { LiveStream } from '../../shared/ipc.js';
 import { useCopy } from '../lib/copy.js';
 import { useConfirm, useToast } from '../lib/feedback.js';
 import { messageOf } from '../lib/useAsync.js';
@@ -71,6 +72,31 @@ export function DevicesScreen() {
   const settled = devices.filter((device) => device.status !== 'pending');
 
   const bytes = useMemo(() => recentBytes(activity, Date.now() - HOUR_MS), [activity]);
+
+  /**
+   * Live playback, polled every two seconds while this screen is open.
+   *
+   * A poll, deliberately, and only here: the rate is a number that changes every second by its
+   * nature, a push per sample would be a push per second per stream, and nobody needs it when
+   * the screen is not on. Two seconds is the monitor's own window, so each read is a new value.
+   */
+  const [streams, setStreams] = useState<LiveStream[]>([]);
+  useEffect(() => {
+    let live = true;
+    const read = (): void => {
+      void listStreams()
+        .then((next) => {
+          if (live) setStreams(next);
+        })
+        .catch(() => undefined);
+    };
+    read();
+    const timer = window.setInterval(read, 2_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const report = (err: unknown) => toast({ tone: 'danger', title: messageOf(err) });
 
@@ -150,10 +176,24 @@ export function DevicesScreen() {
         />
         <StatCard
           label={c('devices.statStreams')}
-          value="—"
-          latin
+          value={format.count(streams.length)}
           icon={<PlayIcon size={16} />}
-          footer={c('devices.statNotMeasured')}
+          tone={streams.length > 0 ? 'success' : 'neutral'}
+          footer={
+            streams.length === 0
+              ? c('streams.none')
+              : streams
+                  .map(
+                    (stream) =>
+                      `${stream.deviceName ?? '?'} · ${stream.name} · ${stream.mbps} ${c('streams.rate')}` +
+                      (stream.bottleneck === 'network'
+                        ? ` — ${c('streams.network')}`
+                        : stream.bottleneck === 'source'
+                          ? ` — ${c('streams.source')}`
+                          : ` — ${c('streams.measuring')}`),
+                  )
+                  .join('  |  ')
+          }
         />
         <StatCard
           label={c('devices.statTraffic')}

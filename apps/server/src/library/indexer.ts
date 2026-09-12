@@ -62,7 +62,20 @@ export interface IndexerDeps {
   events: EventBus;
   /** Guard against a pathologically deep or cyclic tree. */
   maxDepth?: number;
+  /**
+   * "Something is playing right now." While it answers true, the index pass parks between
+   * batches. Indexing is background work; a film someone is watching is not.
+   */
+  shouldPause?: () => boolean;
+  /** Rows written per transaction before the event loop gets a turn. Test seam. */
+  batchSize?: number;
 }
+
+/** How many rows go into one transaction before the loop is yielded. */
+const DEFAULT_BATCH = 500;
+
+const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class Indexer {
   /**
@@ -130,7 +143,7 @@ export class Indexer {
       throw err;
     }
 
-    const result = this.reconcile(folder, walked, started);
+    const result = await this.reconcile(folder, walked, started);
     log.info('folder indexed', {
       folderId,
       files: result.fileCount,
@@ -244,7 +257,18 @@ export class Indexer {
    * rewriting them would fire the FTS triggers and turn a no-op rescan of a 200k-file library
    * into a full index rebuild.
    */
-  private reconcile(folder: FolderRow, walked: WalkedEntry[], started: number): IndexResult {
+  /**
+   * Writes the walk into the table — in batches, with the event loop yielded between them.
+   *
+   * This used to be one transaction over the whole folder. SQLite is fast, but fifty thousand
+   * rows is a second or more of solid synchronous work on the one thread that also moves every
+   * byte of every film being streamed — and a film needs its bytes continuously. Heavier files
+   * stuttered whenever a folder was added or the app started, and nothing said why. Each batch
+   * is its own transaction now, the loop gets a turn between them, and while anything is
+   * playing the pass simply waits: an index that finishes ten seconds later costs nobody
+   * anything; a film that freezes for one second does.
+   */
+  private async reconcile(folder: FolderRow, walked: WalkedEntry[], started: number): Promise<IndexResult> {
     const { db } = this.deps;
 
     const existing = new Map<string, ExistingRow>();
@@ -273,8 +297,9 @@ export class Indexer {
     let fileCount = 0;
     let totalBytes = 0;
 
-    const apply = db.transaction(() => {
-      for (const entry of walked) {
+    const batchSize = this.deps.batchSize ?? DEFAULT_BATCH;
+    const applyBatch = db.transaction((batch: WalkedEntry[]) => {
+      for (const entry of batch) {
         if (!entry.isDir) {
           fileCount += 1;
           totalBytes += entry.size ?? 0;
@@ -335,6 +360,15 @@ export class Indexer {
         }
       }
 
+    });
+
+    for (let offset = 0; offset < walked.length; offset += batchSize) {
+      while (this.deps.shouldPause?.() === true) await sleep(250);
+      applyBatch(walked.slice(offset, offset + batchSize));
+      await yieldToLoop();
+    }
+
+    const finish = db.transaction(() => {
       // Whatever is left in `existing` was not seen on disk this pass.
       for (const row of existing.values()) remove.run(row.id);
 
@@ -344,7 +378,7 @@ export class Indexer {
           WHERE id = ?`,
       ).run(started, fileCount, totalBytes, folder.id);
     });
-    apply();
+    finish();
 
     return {
       folderId: folder.id,

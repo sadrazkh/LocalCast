@@ -243,6 +243,25 @@ export function createOperatorRouter(deps: OperatorRouterDeps): Router {
    * The device name is joined in here rather than left to the caller: the panel renders a
    * sentence about a phone, and a sentence about `9f3c-…` is not one.
    */
+  /**
+   * What is playing right now, how fast, and what each stream is waiting on.
+   *
+   * The panel's «پخش‌های در جریان» card said «—» with a footer admitting it was not measured.
+   * This is the measurement: per response, the rate over the last few seconds and whether the
+   * socket or the source is the slow side — which is the difference between "move closer to
+   * the router" and "that drive is too slow", and the answer to "why do heavy films stutter".
+   */
+  router.get(
+    '/streams',
+    wrap((_req, res) => {
+      const streams = ctx.streams.list().map((stream) => ({
+        ...stream,
+        deviceName: stream.deviceId === null ? null : (tokens.getDevice(stream.deviceId)?.name ?? null),
+      }));
+      res.json({ streams });
+    }),
+  );
+
   router.get(
     '/capabilities',
     wrap((_req, res) => {

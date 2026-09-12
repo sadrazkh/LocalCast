@@ -47,6 +47,9 @@
 | `launchOnStartup` actually registers a login item (installed build only), and every file in the library offers a copy-link-for-VLC action | `apps/desktop/src/main/index.ts` (`applyLoginItem`), `apps/pwa/src/routes/LibraryRoute.tsx` | exercised through the desktop and PWA suites |
 | A media player's idle socket is kept two minutes, not Node's five seconds, so a buffer refill does not begin with a reconnect and a TLS handshake | `apps/server/src/index.ts` (`tuneForMedia`) | `apps/server/test/mediaSockets.test.ts` |
 | A playback over WebDAV costs one activity row and 1 MiB reads, not a SQLite write and a 64 KiB read per range request | `apps/server/src/modules/webdav/index.ts` (`recentlyRecorded`), `range.ts` (`STREAM_HIGH_WATER_MARK`) | `apps/server/test/modules/webdav.test.ts` → *records one activity row for a whole playback* |
+| A playback over the main API costs one activity row, not one per range request | `apps/server/src/http/routes/device.ts` (`recentStreams`) | `apps/server/test/streams.test.ts` → *one activity row per playback* |
+| Indexing yields to the event loop between batches and parks entirely while anything is playing | `apps/server/src/library/indexer.ts` (`reconcile`, `shouldPause`) | `apps/server/test/streams.test.ts` → *indexing waits while something is playing* |
+| The panel shows what is playing, at what rate, and whether the network or the source is the slow side | `apps/server/src/streams.ts`, `apps/server/src/http/routes/operator.ts` (`/streams`) | `apps/server/test/streams.test.ts` → *the stream monitor* |
 | A second copy of the app never exits silently: a newer build replaces an older one, or asks — and every branch is written to `logs/main.log` | `apps/desktop/src/main/singleInstance.ts`, `mainLog.ts` | `apps/desktop/src/main/__tests__/singleInstance.test.ts` |
 
 ## The offline test, and why it is written the way it is

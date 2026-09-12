@@ -22,6 +22,7 @@ import { mountWebClient } from './http/web.js';
 import type { Logger, ServerContext, ServerModule } from './kernel.js';
 import { Indexer } from './library/indexer.js';
 import { SqlPermissionService } from './library/permissions.js';
+import { StreamMonitor } from './streams.js';
 import { FsFileResolver } from './library/resolver.js';
 import { createLogger } from './logger.js';
 import { buildLanAccess, type LanAccess } from './net/lanAccess.js';
@@ -132,6 +133,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
   });
   const permissions = new SqlPermissionService(db);
   const files = new FsFileResolver({ db });
+  const streams = new StreamMonitor();
 
   const ctx: ServerContext = {
     db,
@@ -141,6 +143,7 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     events,
     paths: { dataDir: config.dataDir, tempDir: config.tempDir, vendorDir: config.vendorDir },
     log,
+    streams,
   };
 
   const tokens = new TokenService(db, config.jwtSecret, {
@@ -148,7 +151,9 @@ export async function createServer(options: CreateServerOptions = {}): Promise<L
     refreshTokenTtlMs: config.refreshTokenTtlMs,
   });
   const limiter = new RateLimiter(rateLimits ?? {});
-  const indexer = new Indexer({ db, log, events });
+  // Indexing parks while anything is playing: a film needs its bytes continuously, an index
+  // that finishes ten seconds later costs nobody anything.
+  const indexer = new Indexer({ db, log, events, shouldPause: () => streams.count() > 0 });
   /**
    * What each device's browser says it was actually granted.
    *
@@ -668,6 +673,10 @@ function tuneForMedia<T extends http.Server | https.Server>(listener: T): T {
   listener.keepAliveTimeout = 120_000;
   listener.headersTimeout = 125_000;
   listener.timeout = 0;
+  // Nagle off, stated rather than assumed. Node's HTTP server sets it; the TLS server's sockets
+  // arrive through a different path, and a 1 MiB chunk held back for a coalescing timer is a
+  // 40 ms hitch the player cannot see the reason for.
+  listener.on('connection', (socket) => socket.setNoDelay(true));
   return listener;
 }
 

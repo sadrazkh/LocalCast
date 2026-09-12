@@ -125,6 +125,14 @@ export const copy = {
       'این رایانه هنوز روی هیچ شبکهٔ محلی نشانی ندارد. وای‌فای یا کابل شبکه را بررسی کنید؛ به‌محض وصل شدن، نشانی خودش اینجا می‌آید.',
     'lan.failed': 'اشتراک روی شبکهٔ محلی شروع نشد.',
     'lan.recheck': 'بررسی دوباره',
+    // live playback
+    'streams.none': 'الان چیزی پخش نمی‌شود',
+    'streams.one': 'یک پخش در جریان',
+    'streams.many': 'پخش در جریان',
+    'streams.network': 'گلوگاه: شبکه — گوشی آهسته‌تر از این رایانه می‌گیرد؛ به مودم نزدیک‌تر شوید یا Wi-Fi ۵ گیگاهرتز',
+    'streams.source': 'گلوگاه: خودِ فایل — درایوی که فایل رویش است به این سرعت نمی‌رسد',
+    'streams.measuring': 'در حال اندازه‌گیری…',
+    'streams.rate': 'مگابیت بر ثانیه',
     // Firewall. The single most common reason a phone cannot connect on a fresh machine.
     'lan.firewallBlocked':
       'فایروال ویندوز این برنامه را مسدود کرده است. همان پنجره‌ای است که بار اول پرسید «اجازه می‌دهید؟» و بسته شد. تا باز نشود هیچ گوشی‌ای وصل نمی‌شود.',
@@ -303,6 +311,13 @@ export const copy = {
       'This computer has no address on a local network yet. Check the Wi-Fi or the network cable — the address appears here as soon as it connects.',
     'lan.failed': 'Sharing on the local network did not start.',
     'lan.recheck': 'Check again',
+    'streams.none': 'Nothing is playing right now',
+    'streams.one': 'One stream playing',
+    'streams.many': 'streams playing',
+    'streams.network': 'Bottleneck: the network — the phone receives slower than this computer sends; move closer to the router or use 5 GHz Wi-Fi',
+    'streams.source': 'Bottleneck: the file itself — the drive it is on cannot supply it this fast',
+    'streams.measuring': 'Measuring…',
+    'streams.rate': 'Mbit/s',
     'lan.firewallBlocked':
       'Windows Firewall is blocking this app. That is the first-run “Allow access?” prompt, closed without an answer. No phone can connect until it is lifted.',
     'lan.firewallNoRule':

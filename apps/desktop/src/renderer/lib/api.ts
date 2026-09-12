@@ -2,7 +2,7 @@ import type { AccessMode, DeviceSummary, Folder } from '@localcast/contract';
 // Type-only, but the import is load-bearing: it is what pulls `src/shared/ipc.ts` into the
 // renderer's program, and with it the `declare global { interface Window { localcast } }`
 // that makes `window.localcast` typed at all.
-import type { AppInfo, DesktopApi, PairingMintResult } from '../../shared/ipc.js';
+import type { AppInfo, DesktopApi, PairingMintResult, LiveStream } from '../../shared/ipc.js';
 
 export type { AppInfo, DesktopApi, PairingMintResult };
 
@@ -72,6 +72,11 @@ export async function listDevices(): Promise<DeviceSummary[]> {
 export async function listActivity(limit = 100): Promise<ActivityEntry[]> {
   const raw: unknown = await getApi().app.activity(limit);
   return unwrapList<ActivityEntry>(raw, 'entries');
+}
+
+export async function listStreams(): Promise<LiveStream[]> {
+  const raw: unknown = await getApi().app.streams();
+  return unwrapList<LiveStream>(raw, 'streams');
 }
 
 /**

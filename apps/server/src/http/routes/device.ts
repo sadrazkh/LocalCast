@@ -20,6 +20,7 @@ import { toEntry } from '../../library/mediaTypes.js';
 import type { SqlPermissionService } from '../../library/permissions.js';
 import type { ServerContext } from '../../kernel.js';
 import { serveFile } from '../range.js';
+import { RecentKeys } from '../../util/recentKeys.js';
 import { wrap } from '../errors.js';
 import {
   deviceCapabilityReportSchema,
@@ -54,6 +55,9 @@ export interface DeviceRouterDeps {
 }
 
 const pairStatusQuerySchema = z.object({ ticket: z.string().min(1) });
+
+/** Device + file pairs whose activity row was written in the last minute. */
+const recentStreams = new RecentKeys(60_000);
 
 /** `paginationSchema` plus the sub-path being listed. Not in the contract; composed from it. */
 const entriesQuerySchema = paginationSchema.extend({
@@ -346,15 +350,28 @@ export function createDeviceRouter(deps: DeviceRouterDeps): Router {
     permissions.assertCan(device.id, resolved.folderId, wantsDownload ? 'download' : 'stream');
     const mode = permissions.modeFor(device.id, resolved.folderId);
 
-    ctx.activity.record(query.download ? 'file.download' : 'file.stream', device.id, {
-      folderId: resolved.folderId,
-      path: resolved.relPath,
-    });
+    /**
+     * One activity row per playback, not per range request.
+     *
+     * A browser plays a film as a stream of ranged GETs — Safari issues hundreds for a large
+     * file — and each of those was a synchronous SQLite INSERT on this thread, between the seek
+     * and its first byte. Heavier files send more requests and so paid more; that is most of why
+     * they stuttered while light ones did not. Downloads are still recorded every time: they are
+     * one request each, and each is worth a line.
+     */
+    if (query.download || recentStreams.note(`${device.id}:${resolved.folderId}:${resolved.relPath}`)) {
+      ctx.activity.record(query.download ? 'file.download' : 'file.stream', device.id, {
+        folderId: resolved.folderId,
+        path: resolved.relPath,
+      });
+    }
 
     serveFile(req, res, resolved, {
       mode,
       disposition: query.download ? 'attachment' : 'inline',
       log: ctx.log,
+      streams: ctx.streams,
+      deviceId: device.id,
     });
   });
 

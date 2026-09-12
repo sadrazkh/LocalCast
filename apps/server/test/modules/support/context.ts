@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { StreamMonitor } from '../../../src/streams.js';
 import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -268,6 +269,7 @@ export async function createHarness(): Promise<Harness> {
     events: eventBus,
     paths: { dataDir, tempDir, vendorDir },
     log,
+    streams: new StreamMonitor(),
   };
 
   return {

@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { Request, Response } from 'express';
+import type { StreamMonitor } from '../../streams.js';
 
 /**
  * HTTP Range serving, self-contained on purpose.
@@ -129,6 +130,9 @@ function contentDisposition(kind: 'inline' | 'attachment', fileName: string): st
 export interface ServeRangeOptions {
   /** Injectable so a test can watch the stream's lifecycle without touching the disk. */
   createStream?: CreateStream;
+  /** Where the panel reads live playback from. */
+  streams?: StreamMonitor;
+  deviceId?: string;
 }
 
 /**
@@ -227,6 +231,7 @@ export async function serveRange(
     });
 
     res.on('finish', settle);
+    options.streams?.track(res, stream, { deviceId: options.deviceId ?? null, name: target.fileName });
     stream.pipe(res);
   });
 }

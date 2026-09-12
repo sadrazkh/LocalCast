@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs';
 import { ApiException, ErrorCode, type AccessMode } from '@localcast/contract';
 import type { Request, Response } from 'express';
 import type { Logger, ResolvedFile } from '../kernel.js';
+import type { StreamMonitor } from '../streams.js';
 import { contentTypeOf } from '../library/mediaTypes.js';
 
 /**
@@ -88,6 +89,10 @@ function ifRangeMatches(header: string, etag: string, lastModified: string): boo
 }
 
 export interface ServeFileOptions {
+  /** Where the panel reads live playback from. Optional only so a unit test need not build one. */
+  streams?: StreamMonitor;
+  /** The device this response belongs to, for the readout. */
+  deviceId?: string;
   /** The device's mode for the containing folder. `stream` refuses full downloads. */
   mode: AccessMode;
   /** `attachment` is a download by definition and is refused in `stream` mode. */
@@ -97,7 +102,14 @@ export interface ServeFileOptions {
   contentType?: string;
 }
 
-const HIGH_WATER_MARK = 256 * 1024;
+/**
+ * 1 MiB reads, matching the WebDAV path.
+ *
+ * A browser playing a film asks for it in ranged chunks; each chunk the read stream yields is one
+ * read syscall and one TLS record. On a USB drive or a network share, where the heavier films tend
+ * to live, every read is a round trip, and 256 KiB at 40 Mbit/s was twenty of them a second.
+ */
+const HIGH_WATER_MARK = 1024 * 1024;
 
 /**
  * Writes the whole response. Throws `ApiException` before anything is written when the
@@ -229,5 +241,6 @@ export function serveFile(
   });
 
   stream.on('end', cleanup);
+  opts.streams?.track(res, stream, { deviceId: opts.deviceId ?? null, name });
   stream.pipe(res);
 }

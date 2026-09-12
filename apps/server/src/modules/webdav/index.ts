@@ -5,6 +5,7 @@ import { ApiException, DAV_PREFIX, ErrorCode } from '@localcast/contract';
 import type { AccessMode } from '@localcast/contract';
 import type { DeviceIdentity, ResolvedFile, ServerContext, ServerModule } from '../../kernel.js';
 import { contentTypeFor } from '../shared/mime.js';
+import { RecentKeys } from '../../util/recentKeys.js';
 import { DavAuthenticator } from './auth.js';
 import type { CreateStream } from './range.js';
 import { serveRange, weakEtag } from './range.js';
@@ -375,29 +376,12 @@ async function getOrHead(
       disposition: wantsRange || mode === 'stream' ? 'inline' : 'attachment',
       fileName: resolved.entry.name,
     },
-    createStream ? { createStream } : {},
+    {
+      ...(createStream ? { createStream } : {}),
+      streams: ctx.streams,
+      deviceId: device.id,
+    },
   );
-}
-
-/**
- * Keys seen in the last minute. Bounded: an entry expires on its next lookup after the window,
- * and the map is swept whenever it grows past a few thousand, so a long session cannot grow it
- * without limit.
- */
-class RecentKeys {
-  readonly #seen = new Map<string, number>();
-  constructor(private readonly windowMs: number) {}
-
-  /** True the first time a key is seen within the window; false while it is still fresh. */
-  note(key: string, now = Date.now()): boolean {
-    const last = this.#seen.get(key);
-    if (last !== undefined && now - last < this.windowMs) return false;
-    this.#seen.set(key, now);
-    if (this.#seen.size > 4096) {
-      for (const [k, at] of this.#seen) if (now - at >= this.windowMs) this.#seen.delete(k);
-    }
-    return true;
-  }
 }
 
 const recentlyRecorded = new RecentKeys(60_000);
