@@ -12,6 +12,7 @@ import {
   printerSchema,
   searchResponseSchema,
   uploadSessionSchema,
+  playbackUrlResponseSchema,
 } from '@localcast/contract';
 import type {
   Entry,
@@ -268,6 +269,23 @@ export class ApiClient {
       headers: { accept: 'application/json' },
       signal: options.signal,
     }));
+  }
+
+  /**
+   * An absolute URL the media element can open directly — no header, no service worker.
+   *
+   * The whole reason `contentUrl()` returns a bare URL is that a `<video>` cannot send the
+   * bearer; the worker used to attach it, which put every byte through the worker. This asks the
+   * server for a URL that carries its own short-lived grant, and the player uses that instead.
+   */
+  async playbackUrl(fileId: string, options: RequestOptions = {}): Promise<{ url: string; expiresAt: number }> {
+    const issued = await this.#authed(playbackUrlResponseSchema, 'POST /files/:id/playback-url', () => ({
+      url: `${this.#baseUrl}${API_PREFIX}/files/${encodeURIComponent(fileId)}/playback-url`,
+      method: 'POST',
+      headers: { accept: 'application/json' },
+      signal: options.signal,
+    }));
+    return { url: `${this.#baseUrl}${issued.url}`, expiresAt: issued.expiresAt };
   }
 
   async fileMeta(fileId: string, options: RequestOptions = {}): Promise<Entry> {

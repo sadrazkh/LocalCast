@@ -9,11 +9,12 @@ import {
   pairClaimRequestSchema,
   paginationSchema,
   refreshRequestSchema,
+  API_PREFIX,
 } from '@localcast/contract';
 import type { PairingService } from '../../auth/pairing.js';
 import type { RateLimiter } from '../../auth/rateLimit.js';
 import type { TokenService } from '../../auth/tokens.js';
-import { authed, bearerAuth } from '../../auth/middleware.js';
+import { authed, bearerAuth, playbackTicketAuth } from '../../auth/middleware.js';
 import type { ServerConfig } from '../../config.js';
 import type { FsFileResolver, FolderRow } from '../../library/resolver.js';
 import { toEntry } from '../../library/mediaTypes.js';
@@ -55,6 +56,9 @@ export interface DeviceRouterDeps {
 }
 
 const pairStatusQuerySchema = z.object({ ticket: z.string().min(1) });
+
+/** How long a playback URL stays good. Longer than a film; dead by tomorrow. */
+const PLAYBACK_TICKET_TTL_MS = 6 * 60 * 60 * 1000;
 
 /** Device + file pairs whose activity row was written in the last minute. */
 const recentStreams = new RecentKeys(60_000);
@@ -138,6 +142,9 @@ export function createDeviceRouter(deps: DeviceRouterDeps): Router {
 
   // ── everything below needs a device ────────────────────────────────────────
 
+  // The ticket first, then the bearer, which stands down when the ticket already identified the
+  // device. Only `/files/:id/content` honours a ticket; see `playbackTicketAuth`.
+  router.use(playbackTicketAuth(tokens));
   router.use(bearerAuth(tokens));
 
   router.get(
@@ -377,6 +384,32 @@ export function createDeviceRouter(deps: DeviceRouterDeps): Router {
 
   router.get('/files/:id/content', content);
   router.head('/files/:id/content', content);
+
+  /**
+   * A URL the media element can open on its own, with no header and no service worker.
+   *
+   * Six hours: longer than any film, short enough that a URL copied somewhere it should not have
+   * been is dead by tomorrow. The client asks again each time a file is opened, so nothing has
+   * to be refreshed in place. Bearer-authenticated, obviously — it is the bearer being exchanged
+   * for something a `<video>` can carry.
+   */
+  router.post(
+    '/files/:id/playback-url',
+    wrap(async (req, res) => {
+      const { device } = authed(req);
+      const fileId = req.params['id'] as string;
+      const resolved = await files.resolveById(fileId);
+      permissions.assertCan(device.id, resolved.folderId, 'stream');
+
+      const row = tokens.getDevice(device.id);
+      if (!row) throw new ApiException(ErrorCode.UNAUTHENTICATED, 'Unknown device');
+      const { ticket, expiresAt } = tokens.issuePlaybackTicket(row, fileId, PLAYBACK_TICKET_TTL_MS);
+      res.json({
+        url: `${API_PREFIX}/files/${encodeURIComponent(fileId)}/content?pt=${encodeURIComponent(ticket)}`,
+        expiresAt,
+      });
+    }),
+  );
 
   // ── helpers bound to this router's dependencies ────────────────────────────
 

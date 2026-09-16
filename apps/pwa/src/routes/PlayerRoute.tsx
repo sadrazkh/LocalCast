@@ -94,7 +94,20 @@ function Player({ entry }: { entry: Entry }) {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const contentUrl = client.api.contentUrl(entry.id);
+  /**
+   * The address the `<video>` opens.
+   *
+   * A ticketed URL from the server, so the element fetches the file itself — through the
+   * browser's own media pipeline, with no service worker rebuilding every range request in
+   * between. That hop was a per-chunk tax on the phone and, on a browser that refuses to register
+   * a worker on this origin, the reason nothing played at all. The bare content URL remains the
+   * fallback for a server too old to issue tickets, where the worker path still applies.
+   */
+  const playback = useAsync(async (signal) => (await client.api.playbackUrl(entry.id, { signal })).url, [
+    client,
+    entry.id,
+  ]);
+  const contentUrl = playback.value ?? client.api.contentUrl(entry.id);
   const davUrl =
     session === null
       ? client.api.davUrl(entry.folderId, entry.path)
@@ -215,7 +228,13 @@ function Player({ entry }: { entry: Entry }) {
 
   return (
     <Screen title={entry.name} back={buildHref(`/library/${encodeURIComponent(entry.folderId)}`)} flush>
-      {entry.browserPlayable ? (
+      {entry.browserPlayable && playback.loading && playback.value === null && playback.error === null ? (
+        // The ticket is one small request; the element is not mounted until it arrives, or the
+        // bare URL would start loading through the worker only to be replaced a moment later.
+        <div className={styles.stage}>
+          <Spinner size="lg" labelled />
+        </div>
+      ) : entry.browserPlayable ? (
         <div className={styles.stage}>
           <video
             ref={videoRef}

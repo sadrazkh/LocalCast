@@ -41,6 +41,9 @@ describe('the prefixes are copied from the contract, so they must still match it
 describe('which requests get the bearer', () => {
   it('claims the Range endpoint and the WebDAV mount', () => {
     expect(isProtectedMediaUrl(new URL(`${ORIGIN}/api/v1/files/abc/content`), ORIGIN)).toBe(true);
+    // A playback ticket in the URL is the request's own grant. Intercepting it would put every
+    // byte back through the worker, which is the tax the ticket exists to remove.
+    expect(isProtectedMediaUrl(new URL(`${ORIGIN}/api/v1/files/abc/content?pt=dev.1.sig`), ORIGIN)).toBe(false);
     expect(isProtectedMediaUrl(new URL(`${ORIGIN}/dav/folder-1/Dune.mkv`), ORIGIN)).toBe(true);
     expect(isProtectedMediaUrl(new URL(`${ORIGIN}/dav`), ORIGIN)).toBe(true);
   });

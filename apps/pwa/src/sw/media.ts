@@ -43,7 +43,12 @@ const CONTENT_PATH = new RegExp(`^${SW_API_PREFIX}/files/[^/]+/content$`);
  */
 export function isProtectedMediaUrl(url: URL, origin: string): boolean {
   if (url.origin !== origin) return false;
-  if (CONTENT_PATH.test(url.pathname)) return true;
+  if (CONTENT_PATH.test(url.pathname)) {
+    // A playback ticket in the URL is the whole point of the ticket: the request carries its own
+    // grant, so the browser's media pipeline fetches it directly and the worker stays out of the
+    // byte path. Touching it here would put every byte back through the worker.
+    return !url.searchParams.has('pt');
+  }
   return url.pathname === SW_DAV_PREFIX || url.pathname.startsWith(`${SW_DAV_PREFIX}/`);
 }
 

@@ -156,6 +156,17 @@ export const folderSchema = z.object({
 });
 export type Folder = z.infer<typeof folderSchema>;
 
+/**
+ * A URL a `<video>` can open on its own — the bearer exchanged for a short-lived, single-file
+ * ticket in the query string, so playback no longer has to route through the service worker.
+ */
+export const playbackUrlResponseSchema = z.object({
+  /** Relative to the API origin: `/api/v1/files/<id>/content?pt=…`. */
+  url: z.string().min(1),
+  expiresAt: z.number().int(),
+});
+export type PlaybackUrlResponse = z.infer<typeof playbackUrlResponseSchema>;
+
 export const entrySchema = z.object({
   id: z.string(),
   folderId: z.string(),

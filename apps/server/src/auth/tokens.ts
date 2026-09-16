@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { SignJWT, jwtVerify, errors as joseErrors } from 'jose';
 import { ApiException, ErrorCode } from '@localcast/contract';
 import type { Database as Db } from 'better-sqlite3';
@@ -62,6 +62,77 @@ export class TokenService {
       .setExpirationTime(Math.floor(expiresAt / 1000))
       .sign(this.secret);
     return { token, expiresAt };
+  }
+
+  /**
+   * A grant for one file, for one device, for a few hours — carried in the URL.
+   *
+   * ## Why a second credential exists
+   *
+   * `<video src>` cannot send a header. The bearer therefore reached the media endpoint only by
+   * way of the service worker, which rebuilt every range request with the token attached — and
+   * that put every byte of every film through the worker: fetched in the worker's context, handed
+   * back through `respondWith`, an extra process hop per chunk on a phone. Chrome, on the
+   * self-signed origin the local network uses, refuses to register a worker at all, so there the
+   * player could not play anything. A URL the media element can open *directly* takes the worker
+   * out of the byte path entirely, and the browser's own media pipeline — the one that is good at
+   * ranges, buffering and hardware decoding — does the work it was built for.
+   *
+   * ## Why it is safe enough to put in a URL
+   *
+   * It is scoped to one file and one device, it expires, and it is bound to the device's
+   * `token_version` — so «بستن دسترسی» in the panel kills every ticket that device holds on the
+   * very next request, exactly as it kills the bearer. It is an HMAC over those facts, not a
+   * database row, so issuing one costs nothing and there is nothing to clean up. What it costs is
+   * appearing in a request line, and therefore in a log on the machine it was issued by — which
+   * already holds the file.
+   */
+  issuePlaybackTicket(device: Pick<DeviceRow, 'id' | 'token_version'>, fileId: string, ttlMs: number): {
+    ticket: string;
+    expiresAt: number;
+  } {
+    const expiresAt = Date.now() + ttlMs;
+    const signature = this.#playbackSignature(device.id, fileId, expiresAt, device.token_version);
+    return { ticket: `${device.id}.${expiresAt}.${signature}`, expiresAt };
+  }
+
+  /** The device a ticket names, once every one of its claims has been checked. */
+  verifyPlaybackTicket(ticket: string, fileId: string): DeviceIdentity {
+    const invalid = new ApiException(ErrorCode.UNAUTHENTICATED, 'Invalid playback ticket');
+    const parts = ticket.split('.');
+    if (parts.length !== 3) throw invalid;
+    const [deviceId, expiresText, given] = parts as [string, string, string];
+    const expiresAt = Number(expiresText);
+    if (!Number.isSafeInteger(expiresAt)) throw invalid;
+    if (expiresAt <= Date.now()) {
+      throw new ApiException(ErrorCode.TOKEN_EXPIRED, 'Playback ticket has expired');
+    }
+
+    // Reloaded on every request, as the bearer is: a revocation is already true by the time the
+    // next byte is served, and a bumped `token_version` changes the expected signature.
+    const device = this.getDevice(deviceId);
+    if (!device) throw invalid;
+    if (device.status !== 'active') {
+      throw new ApiException(ErrorCode.DEVICE_REVOKED, 'Device access has been closed');
+    }
+    const expected = this.#playbackSignature(device.id, fileId, expiresAt, device.token_version);
+    const a = Buffer.from(given, 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw invalid;
+
+    return {
+      id: device.id,
+      userId: device.user_id,
+      name: device.name,
+      platform: device.platform,
+      tokenVersion: device.token_version,
+    };
+  }
+
+  #playbackSignature(deviceId: string, fileId: string, expiresAt: number, tokenVersion: number): string {
+    return createHmac('sha256', this.secret)
+      .update(`playback:${deviceId}:${fileId}:${expiresAt}:${tokenVersion}`)
+      .digest('base64url');
   }
 
   async verifyAccessToken(token: string): Promise<DeviceIdentity> {

@@ -50,6 +50,7 @@
 | A playback over the main API costs one activity row, not one per range request | `apps/server/src/http/routes/device.ts` (`recentStreams`) | `apps/server/test/streams.test.ts` → *one activity row per playback* |
 | Indexing yields to the event loop between batches and parks entirely while anything is playing | `apps/server/src/library/indexer.ts` (`reconcile`, `shouldPause`) | `apps/server/test/streams.test.ts` → *indexing waits while something is playing* |
 | The panel shows what is playing, at what rate, and whether the network or the source is the slow side | `apps/server/src/streams.ts`, `apps/server/src/http/routes/operator.ts` (`/streams`) | `apps/server/test/streams.test.ts` → *the stream monitor* |
+| The in-app player opens a ticketed URL directly — no service worker in the byte path — and the ticket buys one file, for one device, until the device is closed | `apps/server/src/auth/tokens.ts` (`issuePlaybackTicket`), `auth/middleware.ts` (`playbackTicketAuth`), `apps/pwa/src/sw/media.ts` | `apps/server/test/playbackTicket.test.ts`; `apps/pwa/src/sw/media.test.ts` |
 | A second copy of the app never exits silently: a newer build replaces an older one, or asks — and every branch is written to `logs/main.log` | `apps/desktop/src/main/singleInstance.ts`, `mainLog.ts` | `apps/desktop/src/main/__tests__/singleInstance.test.ts` |
 
 ## The offline test, and why it is written the way it is

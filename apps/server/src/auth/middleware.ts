@@ -80,8 +80,54 @@ export function peerContext(): RequestHandler {
   };
 }
 
+/** `/files/<id>/content` — the one path a playback ticket is good for. */
+const CONTENT_PATH = /^\/files\/([^/]+)\/content\/?$/;
+
+/**
+ * Accepts a playback ticket in place of the bearer, on the media endpoint only.
+ *
+ * Mounted ahead of `bearerAuth`, which stands down when this has already identified the device.
+ * Anywhere else on the API a `pt` parameter is ignored and the bearer is demanded as before: the
+ * ticket buys the bytes of one file, and nothing about folders, listings or uploads.
+ */
+export function playbackTicketAuth(tokens: TokenService): RequestHandler {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const ticket = req.query['pt'];
+    if (typeof ticket !== 'string' || ticket.length === 0) {
+      next();
+      return;
+    }
+    const match = CONTENT_PATH.exec(req.path);
+    if (!match || match[1] === undefined) {
+      next();
+      return;
+    }
+    let fileId: string;
+    try {
+      fileId = decodeURIComponent(match[1]);
+    } catch {
+      next();
+      return;
+    }
+    try {
+      req.device = tokens.verifyPlaybackTicket(ticket, fileId);
+      req.peer = req.peer ?? FUNNEL_PEER;
+      tokens.touch(req.device.id, req.peer);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 export function bearerAuth(tokens: TokenService): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
+    // Already identified — by a playback ticket on the media endpoint. Demanding the header the
+    // media element cannot send would undo the point of the ticket.
+    if (req.device) {
+      next();
+      return;
+    }
     const header = req.header('authorization');
     if (!header || !/^Bearer\s+/i.test(header)) {
       next(new ApiException(ErrorCode.UNAUTHENTICATED, 'Bearer token required'));
